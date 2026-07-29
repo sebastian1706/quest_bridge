@@ -21,7 +21,3 @@ RUN python3 patch_vuer.py
 
 COPY receive_test.py receive_test.py
 COPY zmq_publisher.py zmq_publisher.py
-
-# Kein Default-CMD: xr-receive und zmq-publisher teilen sich dieses Image,
-# welches Skript laeuft wird ausschliesslich ueber `command:` in
-# docker-compose.yml je Service festgelegt (siehe dort) - kein Rateraten.

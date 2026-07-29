@@ -4,7 +4,7 @@ $ip = (Get-NetIPAddress -AddressFamily IPv4 |
     Select-Object -First 1).IPAddress
 
 if (-not $ip) {
-    Write-Error "Keine LAN-IP gefunden."
+    Write-Error "No LAN IP found."
     exit 1
 }
 

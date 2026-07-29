@@ -1,17 +1,16 @@
 """
 Minimal test: Quest 3 -> televuer -> stdout
-Kein ZMQ, kein ROS. Nur sehen dass Daten ankommen.
+No ZMQ, no ROS. Just verify that data arrives.
 
-Modus wählen ohne Rebuild:
+Switch mode without rebuild:
   docker compose run -e HAND_TRACKING=true  xr-receive
   docker compose run -e HAND_TRACKING=false xr-receive
 
-Kamerabild im Headset (ego-Modus statt nur Passthrough):
-  IMG_SERVER_IP muss auf die LAN-IP dieses Rechners gesetzt werden (vom Quest
-  erreichbar), WEBRTC_PORT muss zum webrtc_port in
-  teleimager-service/cam_config_server.yaml passen (Default dort: 60001).
-  Parameter (img_shape/binocular) 1:1 aus cam_config_server.yaml uebernommen -
-  muss synchron gehalten werden, falls sich die Kamera-Config aendert.
+Camera image in headset (ego mode instead of passthrough only):
+  IMG_SERVER_IP must be set to the LAN IP of this machine (reachable by the Quest),
+  WEBRTC_PORT must match the webrtc_port in teleimager-service/cam_config_server.yaml
+  (default: 60001). Parameters (img_shape/binocular) taken 1:1 from cam_config_server.yaml —
+  must be kept in sync if the camera config changes.
     docker compose run -e IMG_SERVER_IP=172.16.168.58 xr-receive
 """
 import os, time
@@ -21,18 +20,18 @@ hand_mode = os.environ.get("HAND_TRACKING", "false").lower() == "true"
 host_ip = os.environ.get("HOST_IP", "") or "<PC-LAN-IP>"
 img_server_ip = os.environ.get("IMG_SERVER_IP", "")
 webrtc_port = os.environ.get("WEBRTC_PORT", "60001")
-print(f"Modus: {'Hand-Tracking' if hand_mode else 'Controller'}")
+print(f"Mode: {'Hand tracking' if hand_mode else 'Controller'}")
 
 if img_server_ip:
     display_mode = "ego"
     webrtc = True
     webrtc_url = f"https://{img_server_ip}:{webrtc_port}/offer"
-    print(f"Kamerabild (ego-Modus) ueber {webrtc_url}")
+    print(f"Camera image (ego mode) via {webrtc_url}")
 else:
     display_mode = "pass-through"
     webrtc = False
     webrtc_url = None
-    print("IMG_SERVER_IP nicht gesetzt -> reiner Passthrough-Modus, kein Kamerabild im Headset.")
+    print("IMG_SERVER_IP not set -> passthrough mode, no camera image in headset.")
 
 tv = TeleVuerWrapper(
     use_hand_tracking=hand_mode,
@@ -46,10 +45,10 @@ tv = TeleVuerWrapper(
 )
 
 print("=" * 60)
-print("Warte auf Quest-Verbindung...")
-print("Auf der Quest im Browser oeffnen:")
+print("Waiting for Quest connection...")
+print("Open in Quest browser:")
 print(f"  https://{host_ip}:8012/?ws=wss://{host_ip}:8012")
-print("Sicherheitswarnung bestätigen, dann AR/VR klicken.")
+print("Accept the security warning, then click AR/VR.")
 print("=" * 60)
 
 _last_ready = None
@@ -57,7 +56,7 @@ while True:
     data = tv.get_tele_data()
     if not data.motion_data_ready:
         if _last_ready is not False:
-            print(f"[warten] motion_data_ready=False")
+            print("[waiting] motion_data_ready=False")
             _last_ready = False
         time.sleep(0.1)
         continue

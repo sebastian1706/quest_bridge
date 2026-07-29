@@ -1,10 +1,10 @@
 # quest_bridge
 
-Docker-basierter Bridge zwischen Meta Quest 3 und einem Roboter-Teleoperiations-System.
-Empfängt Pose- und Button-Daten vom Quest 3 über [televuer](https://github.com/unitreerobotics/televuer)
-und publiziert sie per ZMQ (msgpack, Topic `teledata`).
+Docker-based bridge between Meta Quest 3 and a robot.
+Receives pose and button data from the Quest 3 via [televuer](https://github.com/unitreerobotics/televuer)
+and publishes it via ZMQ (msgpack, topic `teledata`).
 
-## Schnellstart
+## Quick start
 
 ```powershell
 # Windows
@@ -16,27 +16,27 @@ und publiziert sie per ZMQ (msgpack, Topic `teledata`).
 ./start.sh
 ```
 
-Der korrekte Browser-Link wird beim Start im Terminal ausgegeben.  
-Sicherheitswarnung bestätigen → AR/VR klicken.
+The correct browser link is printed to the terminal at startup.
+Accept the security warning → click AR/VR.
 
-Alternativ direkt mit `docker compose` (IP manuell angeben):
+Alternatively, run directly with `docker compose` (IP must be provided manually):
 
 ```bash
 docker compose run --service-ports --build -e HOST_IP=192.168.x.x zmq-publisher
 ```
 
-Optionale Env-Variablen:
+Optional environment variables:
 
-| Variable | Default | Beschreibung |
+| Variable | Default | Description |
 |---|---|---|
-| `HOST_IP` | — | LAN-IP des PCs (wird von den Start-Skripten automatisch gesetzt) |
-| `HAND_TRACKING` | `false` | `true` für Hand-Tracking statt Controller |
-| `IMG_SERVER_IP` | — | LAN-IP des Kamera-Servers (ego-Modus) |
-| `WEBRTC_PORT` | `60001` | Port des WebRTC-Kamera-Servers |
+| `HOST_IP` | — | LAN IP of the host PC (set automatically by the start scripts) |
+| `HAND_TRACKING` | `false` | `true` to use hand tracking instead of controllers |
+| `IMG_SERVER_IP` | — | LAN IP of the camera server (ego mode) |
+| `WEBRTC_PORT` | `60001` | Port of the WebRTC camera server |
 
-## ZMQ-Payload
+## ZMQ Payload
 
-Topic `teledata`, msgpack-kodiert:
+Topic `teledata`, msgpack-encoded:
 
 ```json
 {
@@ -58,37 +58,36 @@ Topic `teledata`, msgpack-kodiert:
 }
 ```
 
-Im Hand-Tracking-Modus enthält `buttons` stattdessen `pinch`/`pinchValue`/`squeeze`/`squeezeValue` pro Hand.
+In hand tracking mode, `buttons` contains `pinch`/`pinchValue`/`squeeze`/`squeezeValue` per hand instead.
 
-Posen werden direkt aus `tv.tvuer.*_arm_pose` gelesen — **ohne** die Hüft-Transformation
-aus `get_tele_data()`, die für Unitree-Humanoid-IK ausgelegt ist und für einen ortsfesten
-Roboterarm nicht passt. Die Koordinatentransformation in das Roboter-Basisframe liegt beim
-Subscriber.
+Poses are read directly from `tv.tvuer.*_arm_pose` — **without** the hip transformation
+from `get_tele_data()`, which is designed for Unitree humanoid IK and not suitable for a
+fixed robot arm. The coordinate transformation into the robot base frame is the subscriber's responsibility.
 
-## Änderung gegenüber upstream televuer
+## Changes vs. upstream televuer
 
-**Problem:** Der upstream `on_controller_move`-Handler in
-[televuer.py](https://github.com/unitreerobotics/televuer) schreibt die Controller-Pose
-direkt in den Shared Memory:
+**Problem:** The upstream `on_controller_move` handler in
+[televuer.py](https://github.com/unitreerobotics/televuer) writes the controller pose
+directly into shared memory:
 
 ```python
 # upstream (buggy)
 self.left_arm_pose_shared[:] = event.value["left"]
 ```
 
-Ist ein Controller nicht verbunden oder vom Quest noch nicht getrackt, schickt der
-Quest-Browser statt einer 16-Float-Liste einen **msgpack ExtType** (`code=0, data=b'\x00'`),
-die JavaScript-Kodierung von `undefined`. Die direkte Zuweisung wirft dann einen `TypeError`.
-Da der Handler ein bare `except: pass` hat, wird der Fehler stumm verschluckt — und alle
-nachfolgenden Zeilen (Buttons, `motion_data_ready = True`) werden nie erreicht.
+When a controller is not connected or not yet tracked by the Quest, the Quest browser sends
+a **msgpack ExtType** (`code=0, data=b'\x00'`) instead of a 16-float list — the JavaScript
+encoding of `undefined`. The direct assignment then raises a `TypeError`.
+Since the handler has a bare `except: pass`, the error is silently swallowed — and all
+subsequent lines (buttons, `motion_data_ready = True`) are never reached.
 
-**Folge:** Buttons funktionieren nicht, der Stream startet erst nachdem kurz Hand-Tracking
-aktiv war (weil erst dann `motion_data_ready` auf `True` gesetzt wird).
+**Effect:** Buttons don't work, and the stream only starts after briefly activating hand
+tracking (because only then is `motion_data_ready` set to `True`).
 
-**Fix in diesem Repo** (`televuer/src/televuer/televuer.py`):
+**Fix in this repo** (`televuer/src/televuer/televuer.py`):
 
 ```python
-# Pose nur schreiben wenn es eine echte Liste ist
+# only write pose if it's a real list
 left_pose = event.value.get("left")
 right_pose = event.value.get("right")
 if isinstance(left_pose, list):
@@ -98,12 +97,12 @@ if isinstance(right_pose, list):
     with self.right_arm_pose_shared.get_lock():
         self.right_arm_pose_shared[:] = right_pose
 
-# Buttons immer verarbeiten, unabhängig von der Pose
+# always process buttons, regardless of pose
 left_controller = event.value.get("leftState", {})
 right_controller = event.value.get("rightState", {})
 ```
 
-Dadurch:
-- Buttons funktionieren sofort ab Verbindungsaufbau
-- Der Stream startet ohne vorheriges Hand-Tracking
-- Einzelne Controller (z. B. nur rechts) funktionieren korrekt
+Result:
+- Buttons work immediately on connection
+- Stream starts without prior hand tracking
+- Single controllers (e.g. right only) work correctly

@@ -2,7 +2,7 @@
 export HOST_IP=$(hostname -I | awk '{print $1}')
 
 if [ -z "$HOST_IP" ]; then
-    echo "Keine LAN-IP gefunden." >&2
+    echo "No LAN IP found." >&2
     exit 1
 fi
 

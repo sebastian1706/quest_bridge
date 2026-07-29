@@ -1,6 +1,6 @@
 services:
-  # Reines Test-/Debug-Skript (nur stdout, kein ZMQ) - nicht gleichzeitig mit
-  # zmq-publisher starten, beide belegen Port 8012.
+  # Debug/test script (stdout only, no ZMQ) — do not run simultaneously with
+  # zmq-publisher, both services use port 8012.
   xr-receive:
     build: .
     container_name: xr-receive
@@ -14,9 +14,9 @@ services:
       - WEBRTC_PORT=${WEBRTC_PORT:-60001}
     restart: unless-stopped
 
-  # Produktiv-Pfad: gleiche Pose-/Kamera-Erfassung wie xr-receive, zusaetzlich
-  # ZMQ PUB (Topic "teledata") fuer einen ROS2-Bridge-Node (siehe
-  # xr_pose_bridge.py im Hauptrepo, TELEOP_INPUT=xr in ros2_teleop).
+  # Production path: same pose/camera capture as xr-receive, plus
+  # ZMQ PUB (topic "teledata") for a ROS2 bridge node
+  # (see xr_pose_bridge.py in the main repo, TELEOP_INPUT=xr in ros2_teleop).
   zmq-publisher:
     build: .
     container_name: xr-zmq-publisher
@@ -32,20 +32,19 @@ services:
       - ZMQ_PORT=${ZMQ_PORT:-5555}
     restart: unless-stopped
 
-  # Nur auf Ubuntu: WebRTC-Kamerastream zur Quest
-  # Starten mit: docker compose up teleimager
-  # Erst Kamera-Discovery: docker compose run teleimager teleimager-server --cf
+  # Linux/Ubuntu only: WebRTC camera stream to the Quest.
+  # Start with: docker compose up teleimager
+  # Camera discovery first: docker compose run teleimager teleimager-server --cf
   teleimager:
     build: ./teleimager-service
     container_name: teleimager
-    network_mode: host        # WebRTC braucht direktes UDP
-    # Nur video0-5 gehoeren wirklich zur RealSense (Depth+Metadata, IR+
-    # Metadata, Color+Metadata) - per /dev/v4l/by-id/ verifiziert. Die auf
-    # diesem Pi 5 zusaetzlich vorhandenen video19+ (rpi-hevc-dec, pispbe-*)
-    # sind die interne Kamera-/Video-Hardware des SoC, unabhaengig von jeder
-    # angeschlossenen USB-Kamera - nicht mappen. Falls sich die Knoten-
-    # Nummerierung durch Neustecken verschiebt: `ls -la /dev/v4l/by-id/`
-    # zeigt zuverlaessig, welche video-Knoten aktuell zur RealSense gehoeren.
+    network_mode: host        # WebRTC requires direct UDP
+    # Only video0-5 belong to the RealSense (Depth+Metadata, IR+Metadata,
+    # Color+Metadata) — verified via /dev/v4l/by-id/. The additional video19+
+    # nodes on this Pi 5 (rpi-hevc-dec, pispbe-*) are the SoC's internal
+    # camera/video hardware, independent of any connected USB camera — do not map.
+    # If node numbering shifts after re-plugging: `ls -la /dev/v4l/by-id/`
+    # reliably shows which video nodes currently belong to the RealSense.
     devices:
       - /dev/video0:/dev/video0
       - /dev/video1:/dev/video1

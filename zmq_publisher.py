@@ -1,39 +1,29 @@
 """
-Quest 3 -> televuer -> ZMQ PUB (tcp://*:5555, Topic "teledata").
+Quest 3 -> televuer -> ZMQ PUB (tcp://*:5555, topic "teledata").
 
-Pendant zu receive_test.py (das bleibt als reines stdout-Test-Skript
-unveraendert) - dieses Skript ist fuer den produktiven Anschluss an einen
-ROS2-Bridge-Node gedacht (siehe xr_pose_bridge.py im Hauptrepo).
+Counterpart to receive_test.py (which remains a pure stdout test script) —
+this script is intended for the productive connection to a ROS2 bridge node or any other ZMQ connection
 
-Modus wählen ohne Rebuild:
+Switch mode without rebuild:
   docker compose run -e HAND_TRACKING=true  zmq-publisher
   docker compose run -e HAND_TRACKING=false zmq-publisher
 
-Kamerabild im Headset (ego-Modus statt nur Passthrough):
-  IMG_SERVER_IP muss auf die LAN-IP dieses Rechners gesetzt werden (vom Quest
-  erreichbar), WEBRTC_PORT muss zum webrtc_port in
-  teleimager-service/cam_config_server.yaml passen (Default dort: 60001).
-  Parameter (img_shape/binocular) 1:1 aus cam_config_server.yaml uebernommen -
-  muss synchron gehalten werden, falls sich die Kamera-Config aendert.
+Camera image in headset (ego mode instead of passthrough only):
+  IMG_SERVER_IP must be set to the LAN IP of this machine (reachable by the Quest),
+  WEBRTC_PORT must match the webrtc_port in teleimager-service/cam_config_server.yaml
+  (default: 60001). Parameters (img_shape/binocular) taken 1:1 from cam_config_server.yaml —
+  must be kept in sync if the camera config changes.
 
-ZMQ-Payload (msgpack-kodiert, Topic "teledata"):
+ZMQ payload (msgpack-encoded, topic "teledata"):
   {
     "timestamp": float,
     "hand_mode": bool,
     "head_pose":        {"pos": [x,y,z], "quat": [x,y,z,w]},
     "left_wrist_pose":  {"pos": [...], "quat": [...]},
     "right_wrist_pose": {"pos": [...], "quat": [...]},
-    "buttons": {...}   # Feldnamen je nach hand_mode, siehe build_buttons()
+    "buttons": {...}   # field names depend on hand_mode, see build_buttons()
   }
 
-  head_pose/left_wrist_pose/right_wrist_pose kommen NICHT aus televuers
-  get_tele_data() (data.left_wrist_pose/right_wrist_pose), sondern direkt aus
-  den rohen tv.tvuer.*_pose-Properties. Grund: get_tele_data() referenziert
-  Wrist-Posen relativ zu einer virtuellen "Hueft"-Position (kopfgier-
-  abhaengig) - das ist Unitree-Humanoid-IK-spezifisch und fuer einen
-  ortsfesten Roboterarm nicht sinnvoll. Die Daten werden ohne
-  Frame-Transformation gesendet; der Subscriber ist fuer die roboter-
-  spezifische Koordinatentransformation zustaendig.
 """
 import os
 import time
@@ -48,18 +38,18 @@ host_ip = os.environ.get("HOST_IP", "") or "<PC-LAN-IP>"
 img_server_ip = os.environ.get("IMG_SERVER_IP", "")
 webrtc_port = os.environ.get("WEBRTC_PORT", "60001")
 zmq_port = os.environ.get("ZMQ_PORT", "5555")
-print(f"Modus: {'Hand-Tracking' if hand_mode else 'Controller'}")
+print(f"Mode: {'Hand tracking' if hand_mode else 'Controller'}")
 
 if img_server_ip:
     display_mode = "ego"
     webrtc = True
     webrtc_url = f"https://{img_server_ip}:{webrtc_port}/offer"
-    print(f"Kamerabild (ego-Modus) ueber {webrtc_url}")
+    print(f"Camera image (ego mode) via {webrtc_url}")
 else:
     display_mode = "pass-through"
     webrtc = False
     webrtc_url = None
-    print("IMG_SERVER_IP nicht gesetzt -> reiner Passthrough-Modus, kein Kamerabild im Headset.")
+    print("IMG_SERVER_IP not set -> passthrough mode, no camera image in headset.")
 
 tv = TeleVuerWrapper(
     use_hand_tracking=hand_mode,
@@ -133,13 +123,13 @@ def build_buttons(data):
 ctx = zmq.Context()
 pub = ctx.socket(zmq.PUB)
 pub.bind(f"tcp://*:{zmq_port}")
-print(f"ZMQ PUB auf tcp://*:{zmq_port}, Topic 'teledata'")
+print(f"ZMQ PUB on tcp://*:{zmq_port}, topic 'teledata'")
 
 print("=" * 60)
-print("Warte auf Quest-Verbindung...")
-print("Auf der Quest im Browser oeffnen:")
+print("Waiting for Quest connection...")
+print("Open in Quest browser:")
 print(f"  https://{host_ip}:8012/?ws=wss://{host_ip}:8012")
-print("Sicherheitswarnung bestaetigen, dann AR/VR klicken.")
+print("Accept the security warning, then click AR/VR.")
 print("=" * 60)
 
 _last_ready = None
@@ -147,7 +137,7 @@ while True:
     data = tv.get_tele_data()
     if not data.motion_data_ready:
         if _last_ready is not False:
-            print("[warten] motion_data_ready=False")
+            print("[waiting] motion_data_ready=False")
             _last_ready = False
         time.sleep(0.1)
         continue
@@ -166,7 +156,7 @@ while True:
         "buttons": build_buttons(data),
     }
     pub.send_multipart([b"teledata", msgpack.packb(payload, use_bin_type=True)])
-    
+
     pos_head = tv.tvuer.head_pose[:3, 3]
     pos_left = tv.tvuer.left_arm_pose[:3, 3]
     pos_right = tv.tvuer.right_arm_pose[:3, 3]

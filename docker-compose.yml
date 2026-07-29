@@ -1,10 +1,3 @@
-## Schnellstart
-# Nur Pose (Windows/Ubuntu, kein Kamerabild):
-#   docker compose run --rm -e HOST_IP=172.16.168.58 zmq-publisher
-# Mit Kamerabild (Ubuntu, teleimager muss laufen):
-#   docker compose run --rm -e HOST_IP=172.16.168.58 -e IMG_SERVER_IP=172.16.168.58 zmq-publisher
-##
-
 services:
   # Reines Test-/Debug-Skript (nur stdout, kein ZMQ) - nicht gleichzeitig mit
   # zmq-publisher starten, beide belegen Port 8012.

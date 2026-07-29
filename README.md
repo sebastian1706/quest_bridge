@@ -6,22 +6,33 @@ und publiziert sie per ZMQ (msgpack, Topic `teledata`).
 
 ## Schnellstart
 
-```bash
-# Nur Pose, kein Kamerabild:
-docker compose run --rm -e HOST_IP=<PC-IP> zmq-publisher
-
-# Mit Kamerabild im Headset (ego-Modus):
-docker compose run --rm -e HOST_IP=<PC-IP> -e IMG_SERVER_IP=<PC-IP> zmq-publisher
-
-# Hand-Tracking statt Controller:
-docker compose run --rm -e HOST_IP=<PC-IP> -e HAND_TRACKING=true zmq-publisher
-
-# Reiner Empfangstest (stdout):
-docker compose run --rm -e HOST_IP=<PC-IP> xr-receive
+```powershell
+# Windows
+.\start.ps1
 ```
 
-Auf der Quest im Browser öffnen: `https://<PC-IP>:8012/?ws=wss://<PC-IP>:8012`  
+```bash
+# Linux / Pi
+./start.sh
+```
+
+Der korrekte Browser-Link wird beim Start im Terminal ausgegeben.  
 Sicherheitswarnung bestätigen → AR/VR klicken.
+
+Alternativ direkt mit `docker compose` (IP manuell angeben):
+
+```bash
+docker compose run --service-ports --build -e HOST_IP=192.168.x.x zmq-publisher
+```
+
+Optionale Env-Variablen:
+
+| Variable | Default | Beschreibung |
+|---|---|---|
+| `HOST_IP` | — | LAN-IP des PCs (wird von den Start-Skripten automatisch gesetzt) |
+| `HAND_TRACKING` | `false` | `true` für Hand-Tracking statt Controller |
+| `IMG_SERVER_IP` | — | LAN-IP des Kamera-Servers (ego-Modus) |
+| `WEBRTC_PORT` | `60001` | Port des WebRTC-Kamera-Servers |
 
 ## ZMQ-Payload
 

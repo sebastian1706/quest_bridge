@@ -1,0 +1,65 @@
+## Schnellstart
+# Nur Pose (Windows/Ubuntu, kein Kamerabild):
+#   docker compose run --rm -e HOST_IP=172.16.168.58 zmq-publisher
+# Mit Kamerabild (Ubuntu, teleimager muss laufen):
+#   docker compose run --rm -e HOST_IP=172.16.168.58 -e IMG_SERVER_IP=172.16.168.58 zmq-publisher
+##
+
+services:
+  # Reines Test-/Debug-Skript (nur stdout, kein ZMQ) - nicht gleichzeitig mit
+  # zmq-publisher starten, beide belegen Port 8012.
+  xr-receive:
+    build: .
+    container_name: xr-receive
+    command: ["python", "receive_test.py"]
+    ports:
+      - "8012:8012"
+    environment:
+      - HAND_TRACKING=${HAND_TRACKING:-false}
+      - HOST_IP=${HOST_IP:-}
+      - IMG_SERVER_IP=${IMG_SERVER_IP:-}
+      - WEBRTC_PORT=${WEBRTC_PORT:-60001}
+    restart: unless-stopped
+
+  # Produktiv-Pfad: gleiche Pose-/Kamera-Erfassung wie xr-receive, zusaetzlich
+  # ZMQ PUB (Topic "teledata") fuer einen ROS2-Bridge-Node (siehe
+  # xr_pose_bridge.py im Hauptrepo, TELEOP_INPUT=xr in ros2_teleop).
+  zmq-publisher:
+    build: .
+    container_name: xr-zmq-publisher
+    command: ["python", "zmq_publisher.py"]
+    ports:
+      - "8012:8012"
+      - "5555:5555"
+    environment:
+      - HAND_TRACKING=${HAND_TRACKING:-false}
+      - HOST_IP=${HOST_IP:-}
+      - IMG_SERVER_IP=${IMG_SERVER_IP:-}
+      - WEBRTC_PORT=${WEBRTC_PORT:-60001}
+      - ZMQ_PORT=${ZMQ_PORT:-5555}
+    restart: unless-stopped
+
+  # Nur auf Ubuntu: WebRTC-Kamerastream zur Quest
+  # Starten mit: docker compose up teleimager
+  # Erst Kamera-Discovery: docker compose run teleimager teleimager-server --cf
+  teleimager:
+    build: ./teleimager-service
+    container_name: teleimager
+    network_mode: host        # WebRTC braucht direktes UDP
+    # Nur video0-5 gehoeren wirklich zur RealSense (Depth+Metadata, IR+
+    # Metadata, Color+Metadata) - per /dev/v4l/by-id/ verifiziert. Die auf
+    # diesem Pi 5 zusaetzlich vorhandenen video19+ (rpi-hevc-dec, pispbe-*)
+    # sind die interne Kamera-/Video-Hardware des SoC, unabhaengig von jeder
+    # angeschlossenen USB-Kamera - nicht mappen. Falls sich die Knoten-
+    # Nummerierung durch Neustecken verschiebt: `ls -la /dev/v4l/by-id/`
+    # zeigt zuverlaessig, welche video-Knoten aktuell zur RealSense gehoeren.
+    devices:
+      - /dev/video0:/dev/video0
+      - /dev/video1:/dev/video1
+      - /dev/video2:/dev/video2
+      - /dev/video3:/dev/video3
+      - /dev/video4:/dev/video4
+      - /dev/video5:/dev/video5
+    profiles:
+      - ubuntu
+    restart: unless-stopped

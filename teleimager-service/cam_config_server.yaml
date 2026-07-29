@@ -1,0 +1,26 @@
+# =====================================================
+# Kamera-Konfiguration fuer teleimager-server.
+#
+# Serial-Nummer per Kamera-Discovery ermittelt:
+#   docker compose --profile ubuntu run --rm teleimager teleimager-server --cf --rs
+# (--rs zeigt RealSense-Kameras separat unter "RealSense serial numbers" an)
+# =====================================================
+head_camera:
+  enable_zmq: true
+  zmq_port: 55555
+  enable_webrtc: true
+  webrtc_port: 60001
+  webrtc_codec: h264
+
+  # RealSense-SDK (pyrealsense2) statt generischem UVC/OpenCV-Zugriff -
+  # liefert den Farbstream zuverlaessig ueber die Seriennummer, unabhaengig
+  # davon, welchem /dev/videoN-Knoten der Farbsensor gerade zugeordnet ist
+  # (RealSense legt pro Sensor mehrere Knoten an, siehe docker-compose.yml).
+  type: realsense
+  image_shape: [480, 640]
+  binocular: false
+  fps: 30
+
+  video_id: null
+  serial_number: 260322272294
+  physical_path: null

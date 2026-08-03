@@ -24,6 +24,15 @@ ZMQ payload (msgpack-encoded, topic "teledata"):
     "buttons": {...}   # field names depend on hand_mode, see build_buttons()
   }
 
+Pose source depends on hand_mode:
+  - hand_mode=False (controller): tv.tvuer.left/right_arm_pose (raw). Controller pose
+    already follows the Unitree arm convention directly, no fix needed.
+  - hand_mode=True (hand tracking): tv.get_tele_data().left/right_wrist_pose. The raw
+    tv.tvuer.left/right_arm_pose is in OpenXR hand-tracking convention (different axis
+    layout than the controller pose) and needs the rotation fix get_tele_data() applies.
+    Note: get_tele_data() also re-expresses the pose relative to the (Unitree-specific)
+    head/waist frame -- if that offset is not wanted for your robot, subtract it back out
+    downstream; see left_wrist_pose/right_wrist_pose in televuer/src/televuer/tv_wrapper.py.
 """
 import os
 import time
@@ -144,8 +153,17 @@ while True:
     _last_ready = True
 
     head_pos_quat = mat_to_pos_quat(tv.tvuer.head_pose)
-    left_pos_quat = mat_to_pos_quat(tv.tvuer.left_arm_pose)
-    right_pos_quat = mat_to_pos_quat(tv.tvuer.right_arm_pose)
+    if hand_mode:
+        # tv.tvuer.left/right_arm_pose is in raw OpenXR hand-tracking convention here
+        # (different axis layout than the controller pose). get_tele_data() applies the
+        # rotation fix (T_TO_UNITREE_HUMANOID_LEFT/RIGHT_ARM) needed to align it, same as
+        # the waist-relative pose upstream uses for IK -- see left_wrist_pose/right_wrist_pose.
+        left_pos_quat = mat_to_pos_quat(data.left_wrist_pose)
+        right_pos_quat = mat_to_pos_quat(data.right_wrist_pose)
+    else:
+        # controller pose already follows the Unitree arm convention directly, no fix needed.
+        left_pos_quat = mat_to_pos_quat(tv.tvuer.left_arm_pose)
+        right_pos_quat = mat_to_pos_quat(tv.tvuer.right_arm_pose)
 
     payload = {
         "timestamp": time.time(),
@@ -158,14 +176,18 @@ while True:
     pub.send_multipart([b"teledata", msgpack.packb(payload, use_bin_type=True)])
 
     pos_head = tv.tvuer.head_pose[:3, 3]
-    pos_left = tv.tvuer.left_arm_pose[:3, 3]
-    pos_right = tv.tvuer.right_arm_pose[:3, 3]
     if hand_mode:
+        pos_left = data.left_wrist_pose[:3, 3]
+        pos_right = data.right_wrist_pose[:3, 3]
         print(
             f"head=({pos_head[0]:+.3f}, {pos_head[1]:+.3f}, {pos_head[2]:+.3f})  "
+            f"L=({pos_left[0]:+.3f}, {pos_left[1]:+.3f}, {pos_left[2]:+.3f})  "
+            f"R=({pos_right[0]:+.3f}, {pos_right[1]:+.3f}, {pos_right[2]:+.3f})  "
             f"pinch L={data.left_hand_pinchValue:.2f}  R={data.right_hand_pinchValue:.2f}"
         )
     else:
+        pos_left = tv.tvuer.left_arm_pose[:3, 3]
+        pos_right = tv.tvuer.right_arm_pose[:3, 3]
         print(
             f"head=({pos_head[0]:+.3f}, {pos_head[1]:+.3f}, {pos_head[2]:+.3f})  "
             f"L=({pos_left[0]:+.3f}, {pos_left[1]:+.3f}, {pos_left[2]:+.3f})  "

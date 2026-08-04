@@ -22,6 +22,9 @@ ZMQ payload (msgpack-encoded, topic "teledata"):
     "left_wrist_pose":  {"pos": [...], "quat": [...]},
     "right_wrist_pose": {"pos": [...], "quat": [...]},
     "buttons": {...}   # field names depend on hand_mode, see build_buttons()
+    # hand_mode only, needed for dex3/inspire/brainco retargeting:
+    "left_hand_pos":  [[x,y,z], ...],   # (25,3) landmark positions
+    "right_hand_pos": [[x,y,z], ...],   # (25,3) landmark positions
   }
 
 """
@@ -108,15 +111,19 @@ def build_buttons(data):
         }
     return {
         "left_trigger": bool(data.left_ctrl_trigger),
-        "left_triggerValue": float(tv.tvuer.left_ctrl_triggerValue),
+        "left_triggerValue": float(data.left_ctrl_triggerValue),
         "left_squeeze": bool(data.left_ctrl_squeeze),
         "left_aButton": bool(data.left_ctrl_aButton),
         "left_bButton": bool(data.left_ctrl_bButton),
+        "left_thumbstick": bool(data.left_ctrl_thumbstick),
+        "left_thumbstickValue": [float(v) for v in data.left_ctrl_thumbstickValue],
         "right_trigger": bool(data.right_ctrl_trigger),
-        "right_triggerValue": float(tv.tvuer.right_ctrl_triggerValue),
+        "right_triggerValue": float(data.right_ctrl_triggerValue),
         "right_squeeze": bool(data.right_ctrl_squeeze),
         "right_aButton": bool(data.right_ctrl_aButton),
         "right_bButton": bool(data.right_ctrl_bButton),
+        "right_thumbstick": bool(data.right_ctrl_thumbstick),
+        "right_thumbstickValue": [float(v) for v in data.right_ctrl_thumbstickValue],
     }
 
 
@@ -155,6 +162,11 @@ while True:
         "right_wrist_pose": {"pos": right_pos_quat[0], "quat": right_pos_quat[1]},
         "buttons": build_buttons(data),
     }
+    if hand_mode:
+        # (25,3) fingertip/joint landmark positions, Unitree hand-URDF convention,
+        # relative to the wrist -- needed for dex3/inspire/brainco retargeting.
+        payload["left_hand_pos"] = data.left_hand_pos.tolist()
+        payload["right_hand_pos"] = data.right_hand_pos.tolist()
     pub.send_multipart([b"teledata", msgpack.packb(payload, use_bin_type=True)])
 
     pos_head = tv.tvuer.head_pose[:3, 3]

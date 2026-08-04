@@ -32,7 +32,7 @@ services:
       - ZMQ_PORT=${ZMQ_PORT:-5555}
     restart: unless-stopped
 
-  # Linux/Ubuntu only: WebRTC camera stream to the Quest.
+  # Linux/Ubuntu only: WebRTC camera stream to the Quest. Pi 5 + RealSense variant.
   # Start with: docker compose up teleimager
   # Camera discovery first: docker compose run teleimager teleimager-server --cf
   teleimager:
@@ -54,4 +54,21 @@ services:
       - /dev/video5:/dev/video5
     profiles:
       - ubuntu
+    restart: unless-stopped
+
+  # For the real G1's PC2 (Jetson Orin NX): stock UVC cameras (head binocular +
+  # 2x wrist), no RealSense. Run this ON PC2, not on the Host.
+  # Start with: docker compose up teleimager-pc2
+  # Camera discovery first (fill video_id/serial_number into cam_config_server.yaml,
+  # then set the correct /dev/videoN below): docker compose run --rm teleimager-pc2 teleimager-server --cf
+  teleimager-pc2:
+    build: ./teleimager-service-pc2
+    container_name: teleimager-pc2
+    network_mode: host        # WebRTC requires direct UDP
+    devices:
+      - /dev/video0:/dev/video0   # head camera (binocular)
+      - /dev/video2:/dev/video2   # left wrist camera
+      - /dev/video4:/dev/video4   # right wrist camera
+    profiles:
+      - pc2
     restart: unless-stopped

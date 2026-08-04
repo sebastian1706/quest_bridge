@@ -60,9 +60,15 @@ Topic `teledata`, msgpack-encoded:
 
 In hand tracking mode, `buttons` contains `pinch`/`pinchValue`/`squeeze`/`squeezeValue` per hand instead.
 
-Poses are read directly from `tv.tvuer.*_arm_pose` — **without** the hip transformation
-from `get_tele_data()`, which is designed for Unitree humanoid IK and not suitable for a
-fixed robot arm. The coordinate transformation into the robot base frame is the subscriber's responsibility.
+In **controller mode**, poses are read directly from `tv.tvuer.*_arm_pose` — **without** the
+hip transformation from `get_tele_data()`, which is designed for Unitree humanoid IK and not
+suitable for a fixed robot arm.
+
+In **hand-tracking mode**, poses are read from `tv.get_tele_data().*_wrist_pose` instead: the
+raw `tv.tvuer.*_arm_pose` is in OpenXR hand-tracking convention (different axis layout than the
+controller pose) and needs the rotation fix that only `get_tele_data()` applies. This does mean
+the hip/waist offset comes along with it in hand mode — the coordinate transformation into the
+robot base frame (including undoing that offset, if not wanted) is the subscriber's responsibility.
 
 ## Changes vs. upstream televuer
 

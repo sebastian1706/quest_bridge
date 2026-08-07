@@ -8,6 +8,10 @@ Switch mode without rebuild:
   docker compose run -e HAND_TRACKING=true  zmq-publisher
   docker compose run -e HAND_TRACKING=false zmq-publisher
 
+Switch target kinematics without rebuild (default: unitree):
+  docker compose run -e KINEMATICS=unitree zmq-publisher   # G1 etc. via teleop_hand_and_arm.py
+  docker compose run -e KINEMATICS=serial  zmq-publisher   # fixed-base arm, e.g. a UR5e subscriber
+
 Camera image in headset (ego mode instead of passthrough only):
   IMG_SERVER_IP must be set to the LAN IP of this machine (reachable by the Quest),
   WEBRTC_PORT must match the webrtc_port in teleimager-service/cam_config_server.yaml
@@ -27,15 +31,18 @@ ZMQ payload (msgpack-encoded, topic "teledata"):
     "right_hand_pos": [[x,y,z], ...],   # (25,3) landmark positions
   }
 
-Pose source depends on hand_mode:
-  - hand_mode=False (controller): tv.tvuer.left/right_arm_pose (raw). Controller pose
-    already follows the Unitree arm convention directly, no fix needed.
-  - hand_mode=True (hand tracking): tv.get_tele_data().left/right_wrist_pose. The raw
-    tv.tvuer.left/right_arm_pose is in OpenXR hand-tracking convention (different axis
-    layout than the controller pose) and needs the rotation fix get_tele_data() applies.
-    Note: get_tele_data() also re-expresses the pose relative to the (Unitree-specific)
-    head/waist frame -- if that offset is not wanted for your robot, subtract it back out
-    downstream; see left_wrist_pose/right_wrist_pose in televuer/src/televuer/tv_wrapper.py.
+Pose source depends on KINEMATICS, independent of hand_mode (hand_mode only picks
+hand-tracking vs. controller as the *input* source; KINEMATICS picks the *output*
+convention):
+  - KINEMATICS=unitree (default): tv.get_tele_data().head/left/right_wrist_pose, for both
+    hand-tracking and controller input. get_tele_data() re-expresses the pose relative to
+    the (moving) head/waist frame and, for hand-tracking, additionally applies the rotation
+    fix needed because the raw hand-tracking pose is in OpenXR convention (different axis
+    layout than the controller pose, which already matches). This is what
+    teleop_hand_and_arm.py's IK (a Unitree humanoid) expects.
+  - KINEMATICS=serial: tv.tvuer.head/left/right_arm_pose (raw, no head/waist-relative
+    transform) -- for a fixed-base arm (e.g. a UR5e subscriber), where the Unitree-specific
+    moving-waist/head transform would be wrong.
 """
 import os
 import time
@@ -46,11 +53,13 @@ import zmq
 from televuer import TeleVuerWrapper
 
 hand_mode = os.environ.get("HAND_TRACKING", "false").lower() == "true"
+unitree_target = os.environ.get("KINEMATICS", "unitree").lower() == "unitree"
 host_ip = os.environ.get("HOST_IP", "") or "<PC-LAN-IP>"
 img_server_ip = os.environ.get("IMG_SERVER_IP", "")
 webrtc_port = os.environ.get("WEBRTC_PORT", "60001")
 zmq_port = os.environ.get("ZMQ_PORT", "5555")
 print(f"Mode: {'Hand tracking' if hand_mode else 'Controller'}")
+print(f"Kinematics target: {'Unitree humanoid (head/waist-relative)' if unitree_target else 'Serial arm (raw pose)'}")
 
 if img_server_ip:
     display_mode = "ego"
@@ -159,16 +168,19 @@ while True:
         continue
     _last_ready = True
 
-    head_pos_quat = mat_to_pos_quat(tv.tvuer.head_pose)
-    if hand_mode:
-        # tv.tvuer.left/right_arm_pose is in raw OpenXR hand-tracking convention here
-        # (different axis layout than the controller pose). get_tele_data() applies the
-        # rotation fix (T_TO_UNITREE_HUMANOID_LEFT/RIGHT_ARM) needed to align it, same as
-        # the waist-relative pose upstream uses for IK -- see left_wrist_pose/right_wrist_pose.
+    if unitree_target:
+        # Unitree humanoid IK (teleop_hand_and_arm.py's arm_ik.solve_ik) expects the
+        # head/waist-relative, axis-corrected pose that get_tele_data() produces --
+        # for hand-tracking AND controller input alike (see tv_wrapper.py: both branches
+        # run the basis-change + head/waist transform, controller just skips the extra
+        # initial-arm-rotation fix since its raw pose already matches that convention).
+        head_pos_quat = mat_to_pos_quat(data.head_pose)
         left_pos_quat = mat_to_pos_quat(data.left_wrist_pose)
         right_pos_quat = mat_to_pos_quat(data.right_wrist_pose)
     else:
-        # controller pose already follows the Unitree arm convention directly, no fix needed.
+        # Serial-kinematics / fixed-base arm: raw pose, no Unitree-specific head/waist
+        # transform (that transform assumes a moving humanoid waist/head, not a bolted-down base).
+        head_pos_quat = mat_to_pos_quat(tv.tvuer.head_pose)
         left_pos_quat = mat_to_pos_quat(tv.tvuer.left_arm_pose)
         right_pos_quat = mat_to_pos_quat(tv.tvuer.right_arm_pose)
 
@@ -187,10 +199,9 @@ while True:
         payload["right_hand_pos"] = data.right_hand_pos.tolist()
     pub.send_multipart([b"teledata", msgpack.packb(payload, use_bin_type=True)])
 
-    pos_head = tv.tvuer.head_pose[:3, 3]
+    # reuse what was just computed/published above -- same source as the payload, no re-derivation
+    pos_head, pos_left, pos_right = head_pos_quat[0], left_pos_quat[0], right_pos_quat[0]
     if hand_mode:
-        pos_left = data.left_wrist_pose[:3, 3]
-        pos_right = data.right_wrist_pose[:3, 3]
         print(
             f"head=({pos_head[0]:+.3f}, {pos_head[1]:+.3f}, {pos_head[2]:+.3f})  "
             f"L=({pos_left[0]:+.3f}, {pos_left[1]:+.3f}, {pos_left[2]:+.3f})  "
@@ -198,8 +209,6 @@ while True:
             f"pinch L={data.left_hand_pinchValue:.2f}  R={data.right_hand_pinchValue:.2f}"
         )
     else:
-        pos_left = tv.tvuer.left_arm_pose[:3, 3]
-        pos_right = tv.tvuer.right_arm_pose[:3, 3]
         print(
             f"head=({pos_head[0]:+.3f}, {pos_head[1]:+.3f}, {pos_head[2]:+.3f})  "
             f"L=({pos_left[0]:+.3f}, {pos_left[1]:+.3f}, {pos_left[2]:+.3f})  "

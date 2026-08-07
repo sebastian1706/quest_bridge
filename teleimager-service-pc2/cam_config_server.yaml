@@ -1,12 +1,15 @@
 # =====================================================
 # Kamera-Konfiguration fuer teleimager-server auf PC2 (G1 Development Computing
-# Unit, Jetson Orin NX) -- Stock-UVC-Kameras (Kopf binokular + 2x Wrist), kein
-# RealSense.
+# Unit, Jetson Orin NX) -- Kopfkamera ist eine Intel RealSense D435I (kein
+# generisches UVC-Modul), Wrist-Kameras (falls angeschlossen) sind Stock-UVC.
 #
-# Werte (video_id/serial_number) per Discovery ermitteln:
-#   docker compose run --rm teleimager-pc2 teleimager-server --cf
+# RealSense-Seriennummer per rs-enumerate-devices ermitteln (nicht die USB-
+# iSerial von lsusb/udevadm - das ist die Asic-Serial/Firmware-Update-ID,
+# eine andere ID als rs.camera_info.serial_number, gegen die hier gematcht wird).
+# UVC-Werte (video_id/serial_number) per Discovery ermitteln:
+#   docker compose run --rm teleimager-pc2 teleimager-server --cf --rs
 # Danach hier eintragen und devices: in docker-compose.yml auf die
-# tatsaechlichen /dev/videoN der Kameras anpassen (siehe Kommentar dort).
+# tatsaechlichen /dev/videoN der Wrist-Kameras anpassen (siehe Kommentar dort).
 # =====================================================
 head_camera:
   enable_zmq: true
@@ -15,43 +18,47 @@ head_camera:
   webrtc_port: 60001
   webrtc_codec: h264
 
-  type: uvc
-  image_shape: [480, 1280]
-  binocular: true
-  fps: 30
-
-  video_id: 0
-  serial_number: null
-  physical_path: null
-
-left_wrist_camera:
-  enable_zmq: true
-  zmq_port: 55556
-  enable_webrtc: true
-  webrtc_port: 60002
-  webrtc_codec: h264
-
-  type: uvc
+  # RealSense-SDK (pyrealsense2) statt generischem UVC/OpenCV-Zugriff - liefert
+  # den Farbstream zuverlaessig ueber die Seriennummer, unabhaengig davon,
+  # welchem /dev/videoN-Knoten der Farbsensor gerade zugeordnet ist (RealSense
+  # legt pro Sensor mehrere Knoten an, siehe docker-compose.yml).
+  type: realsense
   image_shape: [480, 640]
   binocular: false
   fps: 30
 
-  video_id: 2
-  serial_number: null
+  video_id: null
+  serial_number: 348522072474
   physical_path: null
 
-right_wrist_camera:
-  enable_zmq: true
-  zmq_port: 55557
-  enable_webrtc: true
-  webrtc_port: 60003
-  webrtc_codec: h264
+# left_wrist_camera:
+#   enable_zmq: true
+#   zmq_port: 55556
+#   enable_webrtc: true
+#   webrtc_port: 60002
+#   webrtc_codec: h264
 
-  type: uvc
-  image_shape: [480, 640]
-  binocular: false
-  fps: 30
+#   type: uvc
+#   image_shape: [480, 640]
+#   binocular: false
+#   fps: 30
 
-  video_id: 4
-  serial_number: null
-  physical_path: null
+#   video_id: 2
+#   serial_number: null
+#   physical_path: null
+
+# right_wrist_camera:
+#   enable_zmq: true
+#   zmq_port: 55557
+#   enable_webrtc: true
+#   webrtc_port: 60003
+#   webrtc_codec: h264
+
+#   type: uvc
+#   image_shape: [480, 640]
+#   binocular: false
+#   fps: 30
+
+#   video_id: 4
+#   serial_number: null
+#   physical_path: null

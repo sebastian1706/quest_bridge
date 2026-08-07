@@ -56,19 +56,26 @@ services:
       - ubuntu
     restart: unless-stopped
 
-  # For the real G1's PC2 (Jetson Orin NX): stock UVC cameras (head binocular +
-  # 2x wrist), no RealSense. Run this ON PC2, not on the Host.
+  # For the real G1's PC2 (Jetson Orin NX): head camera is an Intel RealSense
+  # D435I (video0-5 are all the same physical sensor's streams, matched by
+  # serial_number in cam_config_server.yaml, not by video_id). Wrist cameras
+  # (stock UVC) are not connected yet - fill in once available. Run this ON
+  # PC2, not on the Host.
   # Start with: docker compose up teleimager-pc2
-  # Camera discovery first (fill video_id/serial_number into cam_config_server.yaml,
-  # then set the correct /dev/videoN below): docker compose run --rm teleimager-pc2 teleimager-server --cf
+  # Camera discovery: docker compose run --rm teleimager-pc2 teleimager-server --cf --rs
   teleimager-pc2:
     build: ./teleimager-service-pc2
     container_name: teleimager-pc2
     network_mode: host        # WebRTC requires direct UDP
     devices:
-      - /dev/video0:/dev/video0   # head camera (binocular)
-      - /dev/video2:/dev/video2   # left wrist camera
-      - /dev/video4:/dev/video4   # right wrist camera
+      - /dev/video0:/dev/video0   # head camera (RealSense D435I, all 6 nodes)
+      - /dev/video1:/dev/video1
+      - /dev/video2:/dev/video2
+      - /dev/video3:/dev/video3
+      - /dev/video4:/dev/video4
+      - /dev/video5:/dev/video5
+      # - /dev/videoN:/dev/videoN   # left wrist camera (fill in once connected)
+      # - /dev/videoN:/dev/videoN   # right wrist camera (fill in once connected)
     profiles:
       - pc2
     restart: unless-stopped

@@ -17,14 +17,15 @@ WORKDIR /app
 # teleimager ist ein eigenstaendiges Repo (bei Unitrees xr_teleoperate nur als
 # Git-Submodule eingebunden) - direkt klonen statt umstaendlich das komplette
 # xr_teleoperate-Monorepo dafuer mitzuziehen.
-# Kein pyrealsense2 hier (anders als teleimager-service/): PC2 nutzt die
-# G1-Stock-UVC-Kameras (pupil-labs-uvc, Teil des [server]-Extras), kein RealSense.
+# Kopfkamera dieses G1 ist eine Intel RealSense D435I (kein generisches UVC-
+# Modul) - pyrealsense2 wird daher gebraucht. Wrist-Kameras (falls angeschlossen)
+# bleiben Stock-UVC (pupil-labs-uvc, Teil des [server]-Extras).
 RUN git clone --depth 1 https://github.com/unitreerobotics/teleimager.git /opt/teleimager && \
-    pip install -e "/opt/teleimager[server]" psutil
+    pip install -e "/opt/teleimager[server]" psutil pyrealsense2
 
 # Ueberschreibt die Beispiel-Config (Fake-Kameras) aus dem geklonten Repo mit
 # unserer echten Kamera-Konfiguration. image_server.py laedt die Config immer
 # von diesem Pfad (relativ zum installierten Package), kein CLI-Flag dafuer.
 COPY cam_config_server.yaml /opt/teleimager/cam_config_server.yaml
 
-CMD ["teleimager-server"]
+CMD ["teleimager-server", "--rs"]

@@ -81,6 +81,14 @@ tv = TeleVuerWrapper(
     webrtc_url=webrtc_url,
     cert_file="/certs/cert.pem",
     key_file="/certs/key.pem",
+    # "head_yaw" (tv_wrapper.py default) also rotates the wrist-pose target by the operator's
+    # live head yaw, coupling arm orientation to head rotation. This robot's camera isn't
+    # head-tracked (fixed RealSense mount, no steerable neck), so that coupling only produced
+    # unwanted arm drift when the operator turned their head. "head_position" keeps the wrist
+    # pose correctly re-centered on the operator's live head *position* (so walking around still
+    # works right) but drops the *rotation* coupling entirely - see
+    # transform_IPunitree_Brobot_world_arm_to_head_then_waist() in tv_wrapper.py.
+    arm_reference_mode="head_position",
 )
 
 

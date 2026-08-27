@@ -1,9 +1,6 @@
 """
 Quest 3 -> televuer -> ZMQ PUB (tcp://*:5555, topic "teledata").
 
-Counterpart to receive_test.py (which remains a pure stdout test script) —
-this script is intended for the productive connection to a ROS2 bridge node or any other ZMQ connection
-
 Switch mode without rebuild:
   docker compose run -e HAND_TRACKING=true  zmq-publisher
   docker compose run -e HAND_TRACKING=false zmq-publisher

@@ -17,6 +17,7 @@ RUN pip install numpy==1.26.4 && \
     pip install 'params-proto<3.0' pyzmq msgpack
 
 COPY patch_vuer.py patch_vuer.py
+COPY vuer_patches/ vuer_patches/
 RUN python3 patch_vuer.py
 
 COPY receive_test.py receive_test.py

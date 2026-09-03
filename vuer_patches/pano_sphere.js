@@ -166,39 +166,60 @@ async function webrtcConnect(offerUrl, video) {
   const _qPitch = new THREE.Quaternion();
   const Y_AXIS = new THREE.Vector3(0, 1, 0);
   const X_AXIS = new THREE.Vector3(1, 0, 0);
+  // displayed orientation = viewQuat (X, operator posture) * homeQuat (Y,
+  // camera mount calibration)
+  const homeQuat = new THREE.Quaternion();
+  const viewQuat = new THREE.Quaternion();
+  const _viewInv = new THREE.Quaternion();
+  const show = () => mesh.quaternion.copy(viewQuat).multiply(homeQuat);
   // yaw about the vertical first, then pitch about the horizontal axis
   // (three.js "XYZ": R = Rx(pitch) * Ry(yaw) * Rz(roll))
   const applyHome = (h) => {
-    mesh.quaternion.setFromEuler(_euler.set(h.pitch * DEG, h.yaw * DEG, h.roll * DEG, "XYZ"));
+    homeQuat.setFromEuler(_euler.set(h.pitch * DEG, h.yaw * DEG, h.roll * DEG, "XYZ"));
+    show();
+  };
+  const anglesOf = (dir) => ({
+    yaw: Math.atan2(-dir.x, -dir.z),
+    pitch: Math.asin(Math.max(-1, Math.min(1, dir.y))),
+  });
+  const gazeDir = (camera) => {
+    camera.getWorldQuaternion(_quat);
+    return _dir.set(0, 0, -1).applyQuaternion(_quat).normalize();
   };
   const currentHome = () => {
-    _euler.setFromQuaternion(mesh.quaternion, "XYZ");
+    _euler.setFromQuaternion(homeQuat, "XYZ");
     return { yaw: _euler.y / DEG, pitch: _euler.x / DEG, roll: _euler.z / DEG };
   };
   const fmt = (h) => `yaw=${h.yaw.toFixed(1)} pitch=${h.pitch.toFixed(1)} roll=${h.roll.toFixed(1)}`;
   applyHome(loadHome());
-  // Y: the content the operator is looking at becomes robot-forward and
-  // level: yaw it to azimuth 0, then pitch it to the horizon
+  // Y (calibration): the content the operator is looking at becomes
+  // robot-forward, with the operator's head horizon as level (tilt the
+  // head to match a tilted horizon before pressing); result = new home
   const setHome = (camera) => {
+    // undo the head's yaw, pitch and roll, expressed in the recentered
+    // frame: the landmark lands where robot-forward is currently shown
+    // (the X direction) with the head's horizon as the level reference
     camera.getWorldQuaternion(_quat);
-    _dir.set(0, 0, -1).applyQuaternion(_quat).normalize();
-    const gazeYaw = Math.atan2(-_dir.x, -_dir.z);
-    const gazePitch = Math.asin(Math.max(-1, Math.min(1, _dir.y)));
-    _qYaw.setFromAxisAngle(Y_AXIS, -gazeYaw);
-    _qPitch.setFromAxisAngle(X_AXIS, -gazePitch);
-    mesh.quaternion.premultiply(_qYaw).premultiply(_qPitch);
+    _quat.premultiply(_viewInv.copy(viewQuat).invert()).invert();
+    homeQuat.premultiply(_quat);
+    show();
     const h = currentHome();
     saveHome(h);
     log("home set:", fmt(h), "(DEFAULT_* candidates)");
   };
-  const goHome = () => {
-    const h = loadHome();
-    applyHome(h);
-    log("-> home:", fmt(h));
+  // X (recenter): show robot-forward in the direction the operator is
+  // facing now; calibration untouched, not stored
+  const recenter = (camera) => {
+    const g = anglesOf(gazeDir(camera));
+    _qPitch.setFromAxisAngle(X_AXIS, g.pitch);
+    _qYaw.setFromAxisAngle(Y_AXIS, g.yaw);
+    viewQuat.copy(_qYaw).multiply(_qPitch);
+    show();
+    log("recentered: yaw", (g.yaw / DEG).toFixed(1), "pitch", (g.pitch / DEG).toFixed(1));
   };
   let lastCamera = null;
   window.addEventListener("keydown", (e) => {
-    if (e.key === "x") goHome();
+    if (e.key === "x" && lastCamera) recenter(lastCamera);
     if (e.key === "y" && calib && lastCamera) setHome(lastCamera);
   });
   mesh.frustumCulled = false;
@@ -243,7 +264,7 @@ async function webrtcConnect(offerUrl, video) {
           }
         }
         if (bPressed && !bWasPressed) toggle();
-        if (xPressed && !xWasPressed) goHome();
+        if (xPressed && !xWasPressed) recenter(camera);
         if (yPressed && !yWasPressed && calib) setHome(camera);
         bWasPressed = bPressed;
         xWasPressed = xPressed;

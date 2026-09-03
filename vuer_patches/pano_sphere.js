@@ -100,9 +100,26 @@ async function webrtcConnect(offerUrl, video) {
   const q = new URLSearchParams(location.search);
   const offerUrl =
     q.get("pano") || `${location.protocol}//${location.hostname}:60010/offer`;
-  // yaw calibration (degrees): rotates the panorama so azimuth 0 can be
-  // aligned with robot-forward once measured. ?panoyaw=90 etc.
-  const yawDeg = parseFloat(q.get("panoyaw") || "0");
+  // Home orientation (degrees) aligns the panorama with robot-forward and
+  // the horizon (yaw: azimuth, pitch/roll: camera mount tilt). Edit the
+  // DEFAULT_* values once the camera mount is final. A home set in the
+  // headset (Y with &panocalib=1) is stored per browser and wins; X
+  // returns to home.
+  const DEFAULT_YAW_DEG = 0;
+  const DEFAULT_PITCH_DEG = 0;
+  const DEFAULT_ROLL_DEG = 0;
+  const HOME_KEY = `pano-home:${location.host}`;
+  const calib = q.get("panocalib") === "1";
+  const loadHome = () => {
+    try {
+      const h = JSON.parse(localStorage.getItem(HOME_KEY));
+      if (h && [h.yaw, h.pitch, h.roll].every(Number.isFinite)) return h;
+    } catch (e) {}
+    return { yaw: DEFAULT_YAW_DEG, pitch: DEFAULT_PITCH_DEG, roll: DEFAULT_ROLL_DEG };
+  };
+  const saveHome = (h) => {
+    try { localStorage.setItem(HOME_KEY, JSON.stringify(h)); } catch (e) {}
+  };
 
   // ---- view toggle: installed FIRST, works even with everything else dead.
   // 'robot' shows the teleop video plane(s), 'pano' the sphere -- never
@@ -141,12 +158,56 @@ async function webrtcConnect(offerUrl, video) {
   const mat = new THREE.MeshBasicMaterial({ map: tex, toneMapped: false });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.name = "pano-sphere";
-  mesh.rotation.y = (yawDeg * Math.PI) / 180;
+  const DEG = Math.PI / 180;
+  const _euler = new THREE.Euler();
+  const _dir = new THREE.Vector3();
+  const _quat = new THREE.Quaternion();
+  const _qYaw = new THREE.Quaternion();
+  const _qPitch = new THREE.Quaternion();
+  const Y_AXIS = new THREE.Vector3(0, 1, 0);
+  const X_AXIS = new THREE.Vector3(1, 0, 0);
+  // yaw about the vertical first, then pitch about the horizontal axis
+  // (three.js "XYZ": R = Rx(pitch) * Ry(yaw) * Rz(roll))
+  const applyHome = (h) => {
+    mesh.quaternion.setFromEuler(_euler.set(h.pitch * DEG, h.yaw * DEG, h.roll * DEG, "XYZ"));
+  };
+  const currentHome = () => {
+    _euler.setFromQuaternion(mesh.quaternion, "XYZ");
+    return { yaw: _euler.y / DEG, pitch: _euler.x / DEG, roll: _euler.z / DEG };
+  };
+  const fmt = (h) => `yaw=${h.yaw.toFixed(1)} pitch=${h.pitch.toFixed(1)} roll=${h.roll.toFixed(1)}`;
+  applyHome(loadHome());
+  // Y: the content the operator is looking at becomes robot-forward and
+  // level: yaw it to azimuth 0, then pitch it to the horizon
+  const setHome = (camera) => {
+    camera.getWorldQuaternion(_quat);
+    _dir.set(0, 0, -1).applyQuaternion(_quat).normalize();
+    const gazeYaw = Math.atan2(-_dir.x, -_dir.z);
+    const gazePitch = Math.asin(Math.max(-1, Math.min(1, _dir.y)));
+    _qYaw.setFromAxisAngle(Y_AXIS, -gazeYaw);
+    _qPitch.setFromAxisAngle(X_AXIS, -gazePitch);
+    mesh.quaternion.premultiply(_qYaw).premultiply(_qPitch);
+    const h = currentHome();
+    saveHome(h);
+    log("home set:", fmt(h), "(DEFAULT_* candidates)");
+  };
+  const goHome = () => {
+    const h = loadHome();
+    applyHome(h);
+    log("-> home:", fmt(h));
+  };
+  let lastCamera = null;
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "x") goHome();
+    if (e.key === "y" && calib && lastCamera) setHome(lastCamera);
+  });
   mesh.frustumCulled = false;
   mesh.renderOrder = -1; // draw first: a background, never an occluder
 
   // ---- render hook: sphere binding, controller poll, view enforcement.
   let bWasPressed = false;
+  let xWasPressed = false;
+  let yWasPressed = false;
   let homeSize = -1;
   let sphereSeen = performance.now();
   const orig = renderer.render.bind(renderer);
@@ -165,15 +226,28 @@ async function webrtcConnect(offerUrl, video) {
         sphereSeen = now;
         log(`pano sphere bound to scene (${homeSize} children)`);
       }
+      lastCamera = camera;
       const session = renderer.xr?.getSession?.();
       if (session) {
-        let pressed = false;
+        // xr-standard mapping: buttons[4]/[5] = A/B (right), X/Y (left)
+        let bPressed = false;
+        let xPressed = false;
+        let yPressed = false;
         for (const src of session.inputSources) {
-          if (src.handedness === "right" && src.gamepad?.buttons?.[5])
-            pressed ||= src.gamepad.buttons[5].pressed;
+          const btn = src.gamepad?.buttons;
+          if (!btn) continue;
+          if (src.handedness === "right") bPressed ||= !!btn[5]?.pressed;
+          if (src.handedness === "left") {
+            xPressed ||= !!btn[4]?.pressed;
+            yPressed ||= !!btn[5]?.pressed;
+          }
         }
-        if (pressed && !bWasPressed) toggle();
-        bWasPressed = pressed;
+        if (bPressed && !bWasPressed) toggle();
+        if (xPressed && !xWasPressed) goHome();
+        if (yPressed && !yWasPressed && calib) setHome(camera);
+        bWasPressed = bPressed;
+        xWasPressed = xPressed;
+        yWasPressed = yPressed;
       }
       mesh.visible = mode === "pano";
       scene.traverse((o) => {

@@ -449,7 +449,8 @@ class TeleVuer:
                     height = 5,
                     distanceToCamera=4,
                     position=[0, -0.5, 0],
-                    layout="stereo-left-right"
+                    layout="stereo-left-right",
+                    fixed=False
                 ),
                 to="bgChildren",
             )

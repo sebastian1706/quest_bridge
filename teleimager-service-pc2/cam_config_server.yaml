@@ -31,6 +31,49 @@ head_camera:
   serial_number: 348522072474
   physical_path: null
 
+# --- ZED_CAMERA_BLOCK_START --- (marker used by start-teleimager-pc2.sh: when the ZED-M
+# isn't physically present it strips this whole block out of a copy of this file and
+# bind-mounts that copy over the image's baked-in config instead. teleimager-server's
+# ImageServer.start() refuses to start ANY camera - including a perfectly healthy
+# head_camera - if even one *configured* camera can't be found at startup, so zed_camera
+# can't just be left in place "optionally". Do not reflow/rename these two marker lines.
+#
+# Stereolabs ZED-M, per USB angeschlossen (vid:pid 2b03:f682). Hat keine per-
+# udev auslesbare Seriennummer (ID_SERIAL ist nur Vendor+Modell) - Matching
+# daher ueber physical_path statt serial_number. video-index0 (Capture-
+# faehig) ist die Bildquelle, video-index1 ist nur ein Kontroll-Interface
+# ohne Capture, siehe /dev/v4l/by-id/usb-Technologies__Inc._ZED-M-*.
+#
+# type: opencv, nicht uvc: die Kamera liefert per USB-Deskriptor ausschliesslich
+# YUY2 (nie MJPG), und zwar als EIN Side-by-Side-Stereo-Frame in genau diesen
+# festen Groessen (v4l2-ctl -d /dev/videoN --list-formats-ext bzw. pyuvc
+# all_modes): 1344x376 @ 15/30/60/100fps, 2560x720 @ 15/30/60fps,
+# 3840x1080 @ 15/30fps, 4416x1242 @ 15fps. UVCCamera (type: uvc) verlangt
+# zwingend format_name=="MJPG" und pyuvc/libuvc stuft bei diesem Geraet
+# zusaetzlich JEDEN deklarierten Modus intern als "unsupported" ein (vermutlich
+# eine Bandbreiten-Berechnung, die mit UVC 1.10 hier nicht klarkommt) - so dass
+# UVCCamera unabhaengig von image_shape/fps immer mit "No matching uvc mode
+# found" scheitert. OpenCVCamera (type: opencv) hat keine dieser beiden
+# Einschraenkungen: sie oeffnet per V4L2 und wandelt YUYV->BGR selbst um.
+# 1344x376 unten ist die kleinste/guenstigste der vier Groessen - bei Bedarf
+# per --cf pruefen und auf eine der anderen umstellen.
+zed_camera:
+  enable_zmq: true
+  zmq_port: 55558
+  enable_webrtc: true
+  webrtc_port: 60004
+  webrtc_codec: h264
+
+  type: opencv
+  image_shape: [1242, 4416]
+  binocular: true
+  fps: 15
+
+  video_id: null
+  serial_number: null
+  physical_path: /sys/devices/platform/3610000.xhci/usb2/2-2/2-2.2/2-2.2:1.0
+# --- ZED_CAMERA_BLOCK_END ---
+
 # left_wrist_camera:
 #   enable_zmq: true
 #   zmq_port: 55556

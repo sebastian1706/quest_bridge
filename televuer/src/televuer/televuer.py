@@ -443,10 +443,12 @@ class TeleVuer:
                 WebRTCStereoVideoPlane(
                     src=self.webrtc_url,
                     iceServer=None,
-                    iceServers=[], 
+                    iceServers=[],
                     key="video-quad",
                     aspect=self.aspect_ratio,
-                    height = 7,
+                    height = 5,
+                    distanceToCamera=4,
+                    position=[0, -0.5, 0],
                     layout="stereo-left-right"
                 ),
                 to="bgChildren",
@@ -612,10 +614,11 @@ class TeleVuer:
                 WebRTCStereoVideoPlane(
                     src=self.webrtc_url,
                     iceServer=None,
-                    iceServers=[], 
+                    iceServers=[],
                     key="video-quad",
                     aspect=self.aspect_ratio,
-                    height=3,
+                    height=8,
+                    distanceToCamera=1.2,
                     layout="stereo-left-right"
                 ),
                 to="bgChildren",

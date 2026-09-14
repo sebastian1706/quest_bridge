@@ -12,11 +12,29 @@ Switch target kinematics without rebuild (default: unitree):
   docker compose run -e KINEMATICS=unitree zmq-publisher   # G1 etc. via teleop_hand_and_arm.py
   docker compose run -e KINEMATICS=serial  zmq-publisher   # fixed-base arm, e.g. a UR5e subscriber
 
-Camera image in headset (ego mode instead of passthrough only):
-  IMG_SERVER_IP must be set to the LAN IP of this machine (reachable by the Quest),
-  WEBRTC_PORT must match the webrtc_port in teleimager-service/cam_config_server.yaml
-  (default: 60001). Parameters (img_shape/binocular) taken 1:1 from cam_config_server.yaml —
-  must be kept in sync if the camera config changes.
+Camera image in headset (ego/immersive mode instead of passthrough only):
+  IMG_SERVER_IP must be set to the LAN IP of this machine (reachable by the Quest).
+  DISPLAY_MODE=ego (default): small floating window, real-world passthrough stays visible
+  around it. DISPLAY_MODE=immersive: camera feed fills the entire view, no passthrough at
+  all - "as if you were the camera" (make sure the operator is physically safe first: no
+  trip hazards, cable slack, ideally spotted - they cannot see their real surroundings).
+  WEBRTC_PORT/BINOCULAR/IMG_HEIGHT/IMG_WIDTH must match the corresponding camera's entry
+  in teleimager-service-pc2/cam_config_server.yaml (webrtc_port/binocular/image_shape) —
+  keep them in sync if that camera config changes. Splitting a binocular (side-by-side)
+  stream into left/right eye happens client-side in the headset (Vuer's
+  WebRTCStereoVideoPlane, layout="stereo-left-right") - the server just forwards the raw
+  frame as-is, so BINOCULAR/IMG_WIDTH only need to be right for the aspect ratio and for
+  televuer to pick the stereo code path; no pixel splitting happens here.
+
+  head_camera (RealSense, monocular, the default below):
+    WEBRTC_PORT=60001 BINOCULAR=false IMG_HEIGHT=480 IMG_WIDTH=640
+
+  zed_camera (ZED-M, true stereo - real left/right parallax instead of the same 2D image
+  in both eyes; only one of head_camera/zed_camera can be the active ego view at a time):
+    WEBRTC_PORT=60004 BINOCULAR=true IMG_HEIGHT=376 IMG_WIDTH=1344
+  (or one of the ZED-M's other 3 side-by-side sizes - see cam_config_server.yaml's
+  ZED_CAMERA_BLOCK comment - IMG_HEIGHT/IMG_WIDTH must match whatever image_shape is set
+  there, since that is what actually gets captured and streamed).
 
 ZMQ payload (msgpack-encoded, topic "teledata"):
   {
@@ -57,15 +75,28 @@ unitree_target = os.environ.get("KINEMATICS", "unitree").lower() == "unitree"
 host_ip = os.environ.get("HOST_IP", "") or "<PC-LAN-IP>"
 img_server_ip = os.environ.get("IMG_SERVER_IP", "")
 webrtc_port = os.environ.get("WEBRTC_PORT", "60001")
+binocular = os.environ.get("BINOCULAR", "false").lower() == "true"
+img_height = int(os.environ.get("IMG_HEIGHT", "480"))
+img_width = int(os.environ.get("IMG_WIDTH", "640"))
 zmq_port = os.environ.get("ZMQ_PORT", "5555")
 print(f"Mode: {'Hand tracking' if hand_mode else 'Controller'}")
 print(f"Kinematics target: {'Unitree humanoid (head/waist-relative)' if unitree_target else 'Serial arm (raw pose)'}")
 
 if img_server_ip:
-    display_mode = "ego"
+    # "ego" (default): small floating window shows the robot's camera, real-world
+    # passthrough stays visible all around it - operator keeps their own hands/
+    # controllers/surroundings in view.
+    # "immersive": the camera feed fills the ENTIRE view, no passthrough at all - "as if
+    # you were the camera". No visibility of your real surroundings while active - make
+    # sure the operator is physically safe (seated/spotted, no trip hazards, cable slack)
+    # before using this.
+    display_mode = os.environ.get("DISPLAY_MODE", "ego")
+    if display_mode not in ("ego", "immersive"):
+        raise ValueError(f"DISPLAY_MODE must be 'ego' or 'immersive', got {display_mode!r}")
     webrtc = True
     webrtc_url = f"https://{img_server_ip}:{webrtc_port}/offer"
-    print(f"Camera image (ego mode) via {webrtc_url}")
+    print(f"Camera image ({display_mode} mode) via {webrtc_url}")
+    print(f"  {'binocular (stereo)' if binocular else 'monocular'}, img_shape=({img_height}, {img_width})")
 else:
     display_mode = "pass-through"
     webrtc = False
@@ -74,8 +105,8 @@ else:
 
 tv = TeleVuerWrapper(
     use_hand_tracking=hand_mode,
-    binocular=False,
-    img_shape=(480, 640),
+    binocular=binocular,
+    img_shape=(img_height, img_width),
     display_mode=display_mode,
     webrtc=webrtc,
     webrtc_url=webrtc_url,

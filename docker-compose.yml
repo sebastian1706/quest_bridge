@@ -28,7 +28,18 @@ services:
       - HAND_TRACKING=${HAND_TRACKING:-false}
       - HOST_IP=${HOST_IP:-}
       - IMG_SERVER_IP=${IMG_SERVER_IP:-}
+      # Defaults below select head_camera (monocular RealSense, webrtc_port 60001 in
+      # cam_config_server.yaml). For true stereo from the ZED-M instead, override all
+      # four together (see zmq_publisher.py's module docstring):
+      #   WEBRTC_PORT=60004 BINOCULAR=true IMG_HEIGHT=376 IMG_WIDTH=1344
       - WEBRTC_PORT=${WEBRTC_PORT:-60001}
+      - BINOCULAR=${BINOCULAR:-false}
+      - IMG_HEIGHT=${IMG_HEIGHT:-480}
+      - IMG_WIDTH=${IMG_WIDTH:-640}
+      # ego (default): small floating window, real-world passthrough visible around it.
+      # immersive: camera feed fills the whole view, no passthrough - operator is blind to
+      # their real surroundings, so make sure they're physically safe first.
+      - DISPLAY_MODE=${DISPLAY_MODE:-ego}
       - ZMQ_PORT=${ZMQ_PORT:-5555}
     restart: unless-stopped
 
@@ -57,10 +68,11 @@ services:
     restart: unless-stopped
 
   # For the real G1's PC2 (Jetson Orin NX): head camera is an Intel RealSense
-  # D435I (video0-5 are all the same physical sensor's streams, matched by
-  # serial_number in cam_config_server.yaml, not by video_id). Wrist cameras
-  # (stock UVC) are not connected yet - fill in once available. Run this ON
-  # PC2, not on the Host.
+  # D435I, matched by serial_number in cam_config_server.yaml (not by
+  # video_id) - its node count/numbering shifts on replug, always verify
+  # with `ls -la /dev/v4l/by-id/` rather than trusting this list blindly.
+  # Wrist cameras (stock UVC) are not connected yet - fill in once available.
+  # Run this ON PC2, not on the Host.
   # Start with: docker compose up teleimager-pc2
   # Camera discovery: docker compose run --rm teleimager-pc2 teleimager-server --cf --rs
   teleimager-pc2:
@@ -68,14 +80,25 @@ services:
     container_name: teleimager-pc2
     network_mode: host        # WebRTC requires direct UDP
     devices:
-      - /dev/video0:/dev/video0   # head camera (RealSense D435I, all 6 nodes)
+      - /dev/video0:/dev/video0   # head camera (RealSense D435I)
       - /dev/video1:/dev/video1
       - /dev/video2:/dev/video2
       - /dev/video3:/dev/video3
-      - /dev/video4:/dev/video4
       - /dev/video5:/dev/video5
       # - /dev/videoN:/dev/videoN   # left wrist camera (fill in once connected)
       # - /dev/videoN:/dev/videoN   # right wrist camera (fill in once connected)
+      - /dev/video13:/dev/video13  # ZED-M (usb-Technologies__Inc._ZED-M-video-index0)
+      - /dev/video14:/dev/video14  # ZED-M (usb-Technologies__Inc._ZED-M-video-index1)
+      # ZED-M is `type: opencv` in cam_config_server.yaml -> opened via OpenCV/V4L2, same
+      # as the head camera's path conceptually - just the video4linux node(s) above, no
+      # /dev/bus/usb/<bus> raw-USB passthrough needed (that WAS required for `type: uvc`
+      # via pyuvc/libuvc, which this camera can't actually use - see the ZED_CAMERA_BLOCK
+      # comment in cam_config_server.yaml for why). Of its two nodes, only video-index0 is
+      # capture-capable; video-index1 is metadata-only and never opens for frames.
+      #
+      # ZED SDK note: whichever process opens this camera (the ZED SDK used by
+      # zed-web.service, or teleimager-server here) gets it exclusively - stop
+      # zed-web.service first, same as start-teleimager-pc2.sh does automatically.
     profiles:
       - pc2
     restart: unless-stopped

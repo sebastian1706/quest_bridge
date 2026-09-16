@@ -31,12 +31,21 @@ Optional environment variables:
 |---|---|---|
 | `HOST_IP` | — | LAN IP of the host PC (set automatically by the start scripts) |
 | `HAND_TRACKING` | `false` | `true` to use hand tracking instead of controllers |
+| `KINEMATICS` | `unitree` | Pose convention of the published poses: `unitree` (humanoid, head/waist-relative) or `serial` (fixed-base arm such as a UR, raw poses), see [Pose source](#pose-source) |
 | `IMG_SERVER_IP` | — | LAN IP of the camera server (ego mode) |
 | `WEBRTC_PORT` | `60001` | Port of the WebRTC camera server |
+| `ZMQ_PORT` | `5555` | Port of the ZMQ publisher (the port mapping in `docker-compose.yml` is fixed to `5555` and must be changed with it) |
+
+`KINEMATICS` is not forwarded by `docker-compose.yml`, so pass it with `-e`, e.g. for a UR arm:
+
+```bash
+docker compose run --service-ports --build -e HOST_IP=192.168.x.x -e KINEMATICS=serial zmq-publisher
+```
 
 ## ZMQ Payload
 
-Topic `teledata`, msgpack-encoded:
+Topic `teledata`, msgpack-encoded, sent as a ZMQ multipart message `[b"teledata", payload]`
+at about 20 Hz:
 
 ```json
 {
@@ -46,29 +55,57 @@ Topic `teledata`, msgpack-encoded:
   "left_wrist_pose":  {"pos": [x, y, z], "quat": [x, y, z, w]},
   "right_wrist_pose": {"pos": [x, y, z], "quat": [x, y, z, w]},
   "buttons": {
-    "right_trigger": false,
-    "right_squeeze": false,
-    "right_aButton": false,
-    "right_bButton": false,
-    "left_trigger":  false,
-    "left_squeeze":  false,
-    "left_aButton":  false,
-    "left_bButton":  false
+    "left_trigger": false,       "right_trigger": false,
+    "left_triggerValue": 0.0,    "right_triggerValue": 0.0,
+    "left_squeeze": false,       "right_squeeze": false,
+    "left_aButton": false,       "right_aButton": false,
+    "left_bButton": false,       "right_bButton": false,
+    "left_thumbstick": false,    "right_thumbstick": false,
+    "left_thumbstickValue": [0.0, 0.0],
+    "right_thumbstickValue": [0.0, 0.0]
   }
 }
 ```
 
-In hand tracking mode, `buttons` contains `pinch`/`pinchValue`/`squeeze`/`squeezeValue` per hand instead.
+Values: `*Value` fields are floats in `[0, 1]`, `*_thumbstickValue` is `[x, y]`, all other button
+fields are booleans. Positions are in meters, quaternions in `[x, y, z, w]` order.
 
-In **controller mode**, poses are read directly from `tv.tvuer.*_arm_pose` — **without** the
-hip transformation from `get_tele_data()`, which is designed for Unitree humanoid IK and not
-suitable for a fixed robot arm.
+In **hand-tracking mode** (`hand_mode: true`), `buttons` contains instead:
 
-In **hand-tracking mode**, poses are read from `tv.get_tele_data().*_wrist_pose` instead: the
-raw `tv.tvuer.*_arm_pose` is in OpenXR hand-tracking convention (different axis layout than the
-controller pose) and needs the rotation fix that only `get_tele_data()` applies. This does mean
-the hip/waist offset comes along with it in hand mode — the coordinate transformation into the
-robot base frame (including undoing that offset, if not wanted) is the subscriber's responsibility.
+```json
+"buttons": {
+  "left_pinch": false,         "right_pinch": false,
+  "left_pinchValue": 0.0,      "right_pinchValue": 0.0,
+  "left_squeeze": false,       "right_squeeze": false,
+  "left_squeezeValue": 0.0,    "right_squeezeValue": 0.0
+}
+```
+
+and the payload additionally contains the hand landmarks needed for dex3/inspire/brainco
+retargeting (Unitree hand-URDF convention, relative to the wrist):
+
+```json
+"left_hand_pos":  [[x, y, z], ...],   // 25 x 3
+"right_hand_pos": [[x, y, z], ...]    // 25 x 3
+```
+
+### Pose source
+
+Which poses are published depends on `KINEMATICS`, **not** on the input mode. `HAND_TRACKING`
+only selects controllers or hand tracking as the input source.
+
+- **`KINEMATICS=unitree`** (default): poses from `tv.get_tele_data()` for both input modes.
+  They are expressed relative to the operator's head/waist and axis-corrected, as expected by
+  the Unitree humanoid IK (`teleop_hand_and_arm.py`). For hand tracking this also includes the
+  rotation fix for the OpenXR hand-tracking convention.
+- **`KINEMATICS=serial`**: raw poses from `tv.tvuer.head_pose` / `tv.tvuer.*_arm_pose` for both input
+  modes, without the head/waist transform. Use this for a fixed-base arm such as a UR. The
+  transformation into the robot base frame is the subscriber's responsibility.
+
+> **Note:** With `KINEMATICS=serial` and `HAND_TRACKING=true`, the raw hand-tracking pose uses
+> the OpenXR hand-tracking axis layout, which differs from the controller pose, and the rotation
+> fix from `get_tele_data()` is not applied. The subscriber has to account for this. Controller
+> input is not affected.
 
 ## Changes vs. upstream televuer
 

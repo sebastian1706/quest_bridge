@@ -14,7 +14,15 @@ and publishes it via ZMQ (msgpack, topic `teledata`).
 ```bash
 # Linux / Pi
 ./start.sh
+
+# Fixed-base arm (UR): the pose convention must be "serial"
+KINEMATICS=serial ./start.sh
 ```
+
+> **`KINEMATICS` defaults to `unitree`.** Those poses are head/waist-relative and
+> axis-corrected for a humanoid. Start a UR session with `KINEMATICS=serial`, otherwise the
+> robot moves — just not in a way that matches the controller. The published payload carries
+> the convention in use, so a subscriber can refuse a mismatch at startup.
 
 The correct browser link is printed to the terminal at startup.
 Accept the security warning → click AR/VR.
@@ -31,15 +39,18 @@ Optional environment variables:
 |---|---|---|
 | `HOST_IP` | — | LAN IP of the host PC (set automatically by the start scripts) |
 | `HAND_TRACKING` | `false` | `true` to use hand tracking instead of controllers |
-| `KINEMATICS` | `unitree` | Pose convention of the published poses: `unitree` (humanoid, head/waist-relative) or `serial` (fixed-base arm such as a UR, raw poses), see [Pose source](#pose-source) |
+| `KINEMATICS` | `unitree` | Pose convention of the published poses: `unitree` (humanoid, head/waist-relative) or `serial` (fixed-base arm such as a UR, raw poses), see [Pose source](#pose-source). **A UR needs `serial`.** |
 | `IMG_SERVER_IP` | — | LAN IP of the camera server (ego mode) |
 | `WEBRTC_PORT` | `60001` | Port of the WebRTC camera server |
 | `ZMQ_PORT` | `5555` | Port of the ZMQ publisher (the port mapping in `docker-compose.yml` is fixed to `5555` and must be changed with it) |
 
-`KINEMATICS` is not forwarded by `docker-compose.yml`, so pass it with `-e`, e.g. for a UR arm:
+`docker-compose.yml` forwards `KINEMATICS` like every other variable, so setting it in the
+environment is enough:
 
 ```bash
-docker compose run --service-ports --build -e HOST_IP=192.168.x.x -e KINEMATICS=serial zmq-publisher
+KINEMATICS=serial ./start.sh
+# or
+KINEMATICS=serial docker compose run --service-ports --build -e HOST_IP=192.168.x.x zmq-publisher
 ```
 
 ## ZMQ Payload
@@ -51,6 +62,7 @@ at about 20 Hz:
 {
   "timestamp": 1234567890.0,
   "hand_mode": false,
+  "kinematics": "unitree",
   "head_pose":        {"pos": [x, y, z], "quat": [x, y, z, w]},
   "left_wrist_pose":  {"pos": [x, y, z], "quat": [x, y, z, w]},
   "right_wrist_pose": {"pos": [x, y, z], "quat": [x, y, z, w]},
@@ -69,6 +81,8 @@ at about 20 Hz:
 
 Values: `*Value` fields are floats in `[0, 1]`, `*_thumbstickValue` is `[x, y]`, all other button
 fields are booleans. Positions are in meters, quaternions in `[x, y, z, w]` order.
+`kinematics` reports the pose convention in use, so a subscriber can refuse a mismatch at
+startup instead of moving in ways that do not match the controller.
 
 In **hand-tracking mode** (`hand_mode: true`), `buttons` contains instead:
 

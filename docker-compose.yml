@@ -30,6 +30,10 @@ services:
       - IMG_SERVER_IP=${IMG_SERVER_IP:-}
       - WEBRTC_PORT=${WEBRTC_PORT:-60001}
       - ZMQ_PORT=${ZMQ_PORT:-5555}
+      # Pose convention. "unitree" = head/waist-relative for a humanoid, "serial" = raw pose
+      # for a fixed-base arm such as a UR. Wrong value -> the robot moves, but not in a way
+      # that matches the controller.
+      - KINEMATICS=${KINEMATICS:-unitree}
     restart: unless-stopped
 
   # Linux/Ubuntu only: WebRTC camera stream to the Quest. Pi 5 + RealSense variant.

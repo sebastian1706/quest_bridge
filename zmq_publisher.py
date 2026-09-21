@@ -57,6 +57,9 @@ webrtc_port = os.environ.get("WEBRTC_PORT", "60001")
 zmq_port = os.environ.get("ZMQ_PORT", "5555")
 print(f"Mode: {'Hand tracking' if hand_mode else 'Controller'}")
 print(f"Kinematics target: {'Unitree humanoid (head/waist-relative)' if unitree_target else 'Serial arm (raw pose)'}")
+if unitree_target:
+    print("  ^ A fixed-base arm (UR) needs KINEMATICS=serial -- otherwise its motions will not")
+    print("    match the controller, because these poses are relative to the operator's head.")
 
 if img_server_ip:
     display_mode = "ego"
@@ -192,6 +195,8 @@ while True:
     payload = {
         "timestamp": time.time(),
         "hand_mode": hand_mode,
+        # Pose convention, so a subscriber can refuse a mismatch instead of moving oddly.
+        "kinematics": "unitree" if unitree_target else "serial",
         "head_pose": {"pos": head_pos_quat[0], "quat": head_pos_quat[1]},
         "left_wrist_pose": {"pos": left_pos_quat[0], "quat": left_pos_quat[1]},
         "right_wrist_pose": {"pos": right_pos_quat[0], "quat": right_pos_quat[1]},

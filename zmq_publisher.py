@@ -47,9 +47,11 @@ import time
 import msgpack
 import numpy as np
 import zmq
+from haptic_receiver import HapticReceiver
 from televuer import TeleVuerWrapper
 
 hand_mode = os.environ.get("HAND_TRACKING", "false").lower() == "true"
+haptic_port = os.environ.get("HAPTIC_PORT", "5556")
 unitree_target = os.environ.get("KINEMATICS", "unitree").lower() == "unitree"
 host_ip = os.environ.get("HOST_IP", "") or "<PC-LAN-IP>"
 img_server_ip = os.environ.get("IMG_SERVER_IP", "")
@@ -158,6 +160,9 @@ pub = ctx.socket(zmq.PUB)
 pub.bind(f"tcp://*:{zmq_port}")
 print(f"ZMQ PUB on tcp://*:{zmq_port}, topic 'teledata'")
 
+haptic = HapticReceiver(ctx, haptic_port)
+print(f"ZMQ SUB on tcp://*:{haptic_port}, topic 'haptic' (force feedback from the robot)")
+
 print("=" * 60)
 print("Waiting for Quest connection...")
 print("Open in Quest browser:")
@@ -209,6 +214,11 @@ while True:
         payload["right_hand_pos"] = data.right_hand_pos.tolist()
     pub.send_multipart([b"teledata", msgpack.packb(payload, use_bin_type=True)])
 
+    # Return channel: newest contact force from the robot, 0.0 when stale or absent.
+    # TODO(haptics): drive the controller's actuator from this. vuer 0.0.60 has no path
+    # to XRInputSource.gamepad.hapticActuators -- see README, "Force feedback".
+    haptic_hand, haptic_amplitude = haptic.latest()
+
     # reuse what was just computed/published above -- same source as the payload, no re-derivation
     pos_head, pos_left, pos_right = head_pos_quat[0], left_pos_quat[0], right_pos_quat[0]
     if hand_mode:
@@ -219,9 +229,11 @@ while True:
             f"pinch L={data.left_hand_pinchValue:.2f}  R={data.right_hand_pinchValue:.2f}"
         )
     else:
+        haptic_str = f"  haptic {haptic_hand}={haptic_amplitude:.2f}" if haptic_hand else ""
         print(
             f"head=({pos_head[0]:+.3f}, {pos_head[1]:+.3f}, {pos_head[2]:+.3f})  "
             f"L=({pos_left[0]:+.3f}, {pos_left[1]:+.3f}, {pos_left[2]:+.3f})  "
             f"R=({pos_right[0]:+.3f}, {pos_right[1]:+.3f}, {pos_right[2]:+.3f})"
+            f"{haptic_str}"
         )
     time.sleep(0.05)

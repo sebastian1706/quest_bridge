@@ -121,6 +121,38 @@ only selects controllers or hand tracking as the input source.
 > fix from `get_tele_data()` is not applied. The subscriber has to account for this. Controller
 > input is not affected.
 
+## Force feedback (return channel)
+
+The bridge listens on a second ZMQ socket for haptic commands coming *back* from the robot,
+so contact force at the tool can be felt in the controller. Port `5556` by default
+(`HAPTIC_PORT`), implemented in `haptic_receiver.py`.
+
+The robot side PUB-**connects**, the bridge SUB-**binds** — only the bridge needs a stable
+address, so the robot PC can sit on any IP. Topic `haptic`, msgpack, sent as
+`[b"haptic", payload]`:
+
+```json
+{"timestamp": 1234567890.0, "hand": "right", "amplitude": 0.0}
+```
+
+`amplitude` is in `[0, 1]`. Only the newest command counts — the receiver drains its queue
+and keeps the last one, and `latest()` reports `(None, 0.0)` if nothing arrived for 0.5 s,
+so a dead robot side stops the vibration instead of freezing it.
+
+The sender is `Quest.send_feedback()` in the `lerobot_teleoperator_quest` package of the
+`lerobot_ur` repo, driven by the UR's wrist force/torque sensor. Run the robot side with
+`--force-feedback`.
+
+> **Not yet wired to the controller.** vuer 0.0.60 has no path from the server to
+> `XRInputSource.gamepad.hapticActuators` — `MotionControllerActuator` drives a MuJoCo
+> simulation *from* controller input (the other direction), `Gamepads` is an empty stub, and
+> the server→client protocol only carries scene-graph operations (SET/UPDATE/UPSERT/ADD/
+> REMOVE/FRAME). The only `hapticActuators` references in the client bundle belong to the
+> WebXR emulator shim, which hard-codes `vibrationActuator` to `null`. Closing this needs a
+> patch to vuer's client, in the same spirit as `patch_vuer.py`. Until then the receiver
+> works and the amplitude is printed in the console log — see the `TODO(haptics)` in
+> `zmq_publisher.py`.
+
 ## Changes vs. upstream televuer
 
 **Problem:** The upstream `on_controller_move` handler in

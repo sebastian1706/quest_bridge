@@ -24,12 +24,14 @@ services:
     ports:
       - "8012:8012"
       - "5555:5555"
+      - "5556:5556"   # return channel: haptic commands from the robot
     environment:
       - HAND_TRACKING=${HAND_TRACKING:-false}
       - HOST_IP=${HOST_IP:-}
       - IMG_SERVER_IP=${IMG_SERVER_IP:-}
       - WEBRTC_PORT=${WEBRTC_PORT:-60001}
       - ZMQ_PORT=${ZMQ_PORT:-5555}
+      - HAPTIC_PORT=${HAPTIC_PORT:-5556}
       # Pose convention. "unitree" = head/waist-relative for a humanoid, "serial" = raw pose
       # for a fixed-base arm such as a UR. Wrong value -> the robot moves, but not in a way
       # that matches the controller.

@@ -20,4 +20,5 @@ COPY patch_vuer.py patch_vuer.py
 RUN python3 patch_vuer.py
 
 COPY receive_test.py receive_test.py
+COPY haptic_receiver.py haptic_receiver.py
 COPY zmq_publisher.py zmq_publisher.py

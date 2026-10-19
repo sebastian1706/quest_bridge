@@ -1,13 +1,26 @@
 from vuer import Vuer
 from vuer.schemas import ImageBackground, Hands, MotionControllers, WebRTCVideoPlane, WebRTCStereoVideoPlane
+from vuer.schemas import ContribLoader, SceneElement
 from multiprocessing import Value, Array, Process, shared_memory
 import numpy as np
 import asyncio
 import threading
+import time
 import cv2
 import os
 from pathlib import Path
 from typing import Literal
+
+
+# Vibration der Controller ueber vuers Plugin-Mechanismus (ContribLoader), siehe haptics.js.
+HAPTICS_LIBRARY = "quest-bridge-haptics"
+HAPTICS_SCRIPT_URL = "/static/haptics.js"
+
+
+class HapticFeedback(SceneElement):
+    """Wird von haptics.js gerendert: laesst die Controller mit left/right (0..1) vibrieren."""
+
+    tag = "HapticFeedback"
 
 
 class TeleVuer:
@@ -94,6 +107,15 @@ class TeleVuer:
             self.vuer.add_handler("HAND_MOVE")(self.on_hand_move)
         else:
             self.vuer.add_handler("CONTROLLER_MOVE")(self.on_controller_move)
+        self.vuer.add_handler("ON_CONTRIB_LOAD")(self.on_contrib_load)
+        self.vuer.add_handler("HAPTIC_STATUS")(self.on_haptic_status)
+
+        # Vibration der Controller: die Staerke kommt per set_haptic_amplitude() aus dem
+        # Hauptprozess (Rueckkanal vom Roboter). HAPTIC_TEST=1 ersetzt sie durch ein Testmuster --
+        # rechter Controller 1 s von 3 s mit halber Staerke, ganz ohne Roboter.
+        self.haptic_test = os.environ.get("HAPTIC_TEST", "").lower() in ("1", "true", "yes")
+        self._haptics_loaded = False
+        self._haptics_last = None
 
         self.display_mode = display_mode
         self.zmq = zmq
@@ -139,6 +161,8 @@ class TeleVuer:
         self.left_arm_pose_shared = Array('d', 16, lock=True)
         self.right_arm_pose_shared = Array('d', 16, lock=True)
         self.motion_data_ready_shared = Value('b', False, lock=True)
+        # [links, rechts] in 0..1; geschrieben vom Hauptprozess, gelesen im vuer-Prozess.
+        self.haptic_amplitude_shared = Array('d', 2, lock=True)
         if self.use_hand_tracking:
             self.left_hand_position_shared = Array('d', 75, lock=True)
             self.right_hand_position_shared = Array('d', 75, lock=True)
@@ -218,6 +242,53 @@ class TeleVuer:
                 self.img2display_shm.unlink()
             except:
                 pass
+
+    async def on_contrib_load(self, event, session):
+        """Erst nach dem Laden einfuegen: vorher kennt vuer den Tag nicht und wuerde ihn als
+        three.js-Objekt anzulegen versuchen."""
+        value = event.value or {}
+        print(f"[haptics] Skript geladen: {value.get('url')}")
+        if value.get("library") == HAPTICS_LIBRARY:
+            self._haptics_loaded = True
+            self._haptics_last = (0.0, 0.0)
+            session.upsert(HapticFeedback(key="haptics", left=0.0, right=0.0), to="bgChildren")
+
+    async def on_haptic_status(self, event, session):
+        value = event.value or {}
+        print(f"[haptics] {value.get('key')}: {value.get('value')}")
+
+    def set_haptic_amplitude(self, left: float, right: float):
+        """Vibrationsstaerke je Controller (0..1). Aus dem Hauptprozess aufrufen."""
+        with self.haptic_amplitude_shared.get_lock():
+            self.haptic_amplitude_shared[0] = min(max(float(left), 0.0), 1.0)
+            self.haptic_amplitude_shared[1] = min(max(float(right), 0.0), 1.0)
+
+    def _haptics_start(self, session):
+        # Nur mit Controllern: Hand-Tracking hat keinen Vibrationsmotor.
+        if self.use_hand_tracking:
+            return
+        self._haptics_loaded = False
+        self._haptics_last = None
+        session.upsert(
+            ContribLoader(key="haptics-loader", url=HAPTICS_SCRIPT_URL, library=HAPTICS_LIBRARY),
+            to="bgChildren",
+        )
+        if self.haptic_test:
+            print("[haptics] Testmodus: rechter Controller vibriert 1 s von 3 s mit Staerke 0.5")
+
+    def _haptics_tick(self, session):
+        if not self._haptics_loaded:
+            return
+        if self.haptic_test:
+            amplitude = (0.0, 0.5 if (time.monotonic() % 3.0) < 1.0 else 0.0)
+        else:
+            with self.haptic_amplitude_shared.get_lock():
+                amplitude = (round(self.haptic_amplitude_shared[0], 2), round(self.haptic_amplitude_shared[1], 2))
+        # Nur Aenderungen schicken; haptics.js pulst mit dem letzten Wert in jedem Frame weiter.
+        if amplitude != self._haptics_last:
+            session.upsert(HapticFeedback(key="haptics", left=amplitude[0], right=amplitude[1]),
+                           to="bgChildren")
+            self._haptics_last = amplitude
 
     async def on_cam_move(self, event, session, fps=60):
         try:
@@ -342,7 +413,9 @@ class TeleVuer:
                 ),
                 to="bgChildren",
             )
+        self._haptics_start(session)
         while True:
+            self._haptics_tick(session)
             session.upsert(
                 [
                     ImageBackground(
@@ -398,7 +471,9 @@ class TeleVuer:
                 to="bgChildren",
             )
 
+        self._haptics_start(session)
         while True:
+            self._haptics_tick(session)
             session.upsert(
                 [
                     ImageBackground(
@@ -438,7 +513,9 @@ class TeleVuer:
                 to="bgChildren",
             )
 
+        self._haptics_start(session)
         while True:
+            self._haptics_tick(session)
             session.upsert(
                 WebRTCStereoVideoPlane(
                     src=self.webrtc_url,
@@ -475,7 +552,9 @@ class TeleVuer:
                 to="bgChildren",
             )
 
+        self._haptics_start(session)
         while True:
+            self._haptics_tick(session)
             session.upsert(
                 WebRTCVideoPlane(
                     src=self.webrtc_url,
@@ -511,7 +590,9 @@ class TeleVuer:
                 ),
                 to="bgChildren",
             )
+        self._haptics_start(session)
         while True:
+            self._haptics_tick(session)
             session.upsert(
                 [
                     ImageBackground(
@@ -567,7 +648,9 @@ class TeleVuer:
                 to="bgChildren",
             )
 
+        self._haptics_start(session)
         while True:
+            self._haptics_tick(session)
             session.upsert(
                 [
                     ImageBackground(
@@ -607,7 +690,9 @@ class TeleVuer:
                 to="bgChildren",
             )
 
+        self._haptics_start(session)
         while True:
+            self._haptics_tick(session)
             session.upsert(
                 WebRTCStereoVideoPlane(
                     src=self.webrtc_url,
@@ -644,7 +729,9 @@ class TeleVuer:
                 to="bgChildren",
             )
 
+        self._haptics_start(session)
         while True:
+            self._haptics_tick(session)
             session.upsert(
                 WebRTCVideoPlane(
                     src=self.webrtc_url,
@@ -681,7 +768,9 @@ class TeleVuer:
                 to="bgChildren",
             )
 
+        self._haptics_start(session)
         while True:
+            self._haptics_tick(session)
             await asyncio.sleep(1.0 / self.display_fps)
 
     # ==================== common data ====================

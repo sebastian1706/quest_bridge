@@ -143,15 +143,47 @@ The sender is `Quest.send_feedback()` in the `lerobot_teleoperator_quest` packag
 `lerobot_ur` repo, driven by the UR's wrist force/torque sensor. Run the robot side with
 `--force-feedback`.
 
-> **Not yet wired to the controller.** vuer 0.0.60 has no path from the server to
-> `XRInputSource.gamepad.hapticActuators` — `MotionControllerActuator` drives a MuJoCo
-> simulation *from* controller input (the other direction), `Gamepads` is an empty stub, and
-> the server→client protocol only carries scene-graph operations (SET/UPDATE/UPSERT/ADD/
-> REMOVE/FRAME). The only `hapticActuators` references in the client bundle belong to the
-> WebXR emulator shim, which hard-codes `vibrationActuator` to `null`. Closing this needs a
-> patch to vuer's client, in the same spirit as `patch_vuer.py`. Until then the receiver
-> works and the amplitude is printed in the console log — see the `TODO(haptics)` in
-> `zmq_publisher.py`.
+### Driving the controller: vuer's ContribLoader
+
+vuer has no built-in haptics, but it has a plugin mechanism. `ContribLoader` loads a script that
+reaches vuer's internals through `window.VUER`, `window.FIBER` and `window.React`, and vuer
+renders any scene element whose `tag` is registered in `VUER.CONTRIB_COMPONENT_LIST`. No patch to
+vuer's minified client is needed.
+
+`haptics.js` registers `HapticFeedback`. Every frame it takes the XR session from
+`FIBER.useThree()` and pulses each controller with its amplitude via
+`gamepad.hapticActuators[0].pulse()`. It reports its state back to the bridge as `HAPTIC_STATUS`
+events, so the terminal shows whether the script loaded, the XR session was found and the
+controllers expose a vibration motor — no browser console on the Quest needed.
+
+The script is served by vuer's own web server under `/static` (same port, same certificate as
+the page). televuer inserts the `HapticFeedback` element only after `ON_CONTRIB_LOAD` arrives:
+before that, vuer does not know the tag and would try to create it as a three.js object.
+
+`zmq_publisher.py` forwards the newest amplitude from `HapticReceiver` to the vuer process
+(`TeleVuer.set_haptic_amplitude()`, shared memory), on every loop — also while waiting for motion
+data, so a stale value cannot keep the controller buzzing. The haptics script is loaded in every
+display mode (pass-through, ego, immersive), but only in controller mode: hand tracking has no
+actuator.
+
+**Feasibility test** — no robot needed:
+
+```bash
+HAPTIC_TEST=1 KINEMATICS=serial ./start.sh
+```
+
+The right controller vibrates for 1 s every 3 s at half strength. The terminal should show:
+
+```
+[haptics] Skript geladen: /static/haptics.js
+[haptics] mounted: True
+[haptics] session: True
+[haptics] inputs: ['left:1', 'right:1']
+```
+
+`inputs` lists each controller with its number of haptic actuators. `0` means the browser exposes
+none — then the WebXR haptics path does not work on this device. Verified on the Quest in
+pass-through mode. `HAPTIC_TEST` replaces the robot's amplitude with the test pattern.
 
 ## Changes vs. upstream televuer
 

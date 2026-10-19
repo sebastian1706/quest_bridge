@@ -32,6 +32,8 @@ services:
       - WEBRTC_PORT=${WEBRTC_PORT:-60001}
       - ZMQ_PORT=${ZMQ_PORT:-5555}
       - HAPTIC_PORT=${HAPTIC_PORT:-5556}
+      # 1 = Machbarkeitstest: rechter Controller vibriert 1 s von 3 s (siehe haptics.js)
+      - HAPTIC_TEST=${HAPTIC_TEST:-}
       # Pose convention. "unitree" = head/waist-relative for a humanoid, "serial" = raw pose
       # for a fixed-base arm such as a UR. Wrong value -> the robot moves, but not in a way
       # that matches the controller.

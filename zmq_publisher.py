@@ -172,6 +172,14 @@ print("=" * 60)
 
 _last_ready = None
 while True:
+    # Return channel: newest contact force from the robot, 0.0 when stale or absent. Forwarded
+    # before the ready check, so a stale value can't keep the controller buzzing while waiting.
+    haptic_hand, haptic_amplitude = haptic.latest()
+    tv.tvuer.set_haptic_amplitude(
+        haptic_amplitude if haptic_hand == "left" else 0.0,
+        haptic_amplitude if haptic_hand == "right" else 0.0,
+    )
+
     data = tv.get_tele_data()
     if not data.motion_data_ready:
         if _last_ready is not False:
@@ -213,11 +221,6 @@ while True:
         payload["left_hand_pos"] = data.left_hand_pos.tolist()
         payload["right_hand_pos"] = data.right_hand_pos.tolist()
     pub.send_multipart([b"teledata", msgpack.packb(payload, use_bin_type=True)])
-
-    # Return channel: newest contact force from the robot, 0.0 when stale or absent.
-    # TODO(haptics): drive the controller's actuator from this. vuer 0.0.60 has no path
-    # to XRInputSource.gamepad.hapticActuators -- see README, "Force feedback".
-    haptic_hand, haptic_amplitude = haptic.latest()
 
     # reuse what was just computed/published above -- same source as the payload, no re-derivation
     pos_head, pos_left, pos_right = head_pos_quat[0], left_pos_quat[0], right_pos_quat[0]

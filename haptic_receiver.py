@@ -1,7 +1,7 @@
 """Return channel for force feedback: haptic commands from the robot side.
 
 Split out of zmq_publisher.py so it can be tested without starting vuer.
-See README, "Force feedback", for the wire format and the open frontend issue.
+See README, "Force feedback", for the wire format and how the amplitude reaches the controller.
 """
 import threading
 import time
